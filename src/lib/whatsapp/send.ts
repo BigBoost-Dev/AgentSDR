@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { hasBookingLinkToken } from "@/lib/crm/bookingLinkToken";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { isPlatformNotConnectedError } from "@/lib/platform/credentials";
@@ -403,6 +404,11 @@ async function assertCallLinks(input: {
 }
 
 export async function sendWhatsapp(request: SendWhatsappRequest): Promise<SendWhatsappResponse> {
+  // The CRM replaces {{booking_link}} before it calls this; anything still
+  // carrying the token here would reach the person raw.
+  if (hasBookingLinkToken(request.text)) {
+    throw new WhatsappApiError(400, "{{booking_link}} only works when sending from the CRM. Paste the booking link itself instead.");
+  }
   let account: WhatsappAccountRow;
   let chat: WhatsappChatRow | null = null;
   let phone: string | null;

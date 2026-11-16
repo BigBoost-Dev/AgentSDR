@@ -1,3 +1,5 @@
+import { hasBookingLinkToken } from "@/lib/crm/bookingLinkToken";
+
 export type InboxSendConnection = {
   id: string;
   chatId: string | null;
@@ -85,6 +87,14 @@ export async function sendFromLinkedinInbox(
     });
   }
 
+  // {{booking_link}} becomes a link only on a send the CRM makes (it needs the
+  // record's booking code); sent straight through LinkedIn it would arrive raw.
+  if (hasBookingLinkToken(text)) {
+    throw new InboxSendError(
+      "{{booking_link}} only works once this person has replied and has a CRM conversation. Paste the booking link itself instead.",
+      409,
+    );
+  }
   const providerMessageId = await dependencies.sendThroughLinkedin(connection.chatId, text);
   return dependencies.saveNativeMessage({ connection, text, providerMessageId });
 }

@@ -56,6 +56,27 @@ describe("LinkedIn inbox manual sending", () => {
     assert.deepEqual(setup.calls, { crm: 1, linkedin: 0, saved: 0 });
   });
 
+  test("refuses {{booking_link}} outside a CRM conversation, where it would arrive raw", async () => {
+    const setup = dependencies();
+    await assert.rejects(
+      sendFromLinkedinInbox(
+        { connectionId: connection.id, text: "Book here: {{ booking_link }}", idempotencyKey: "request-token" },
+        setup.value,
+      ),
+      (error: unknown) => error instanceof InboxSendError && error.status === 409,
+    );
+    assert.deepEqual(setup.calls, { crm: 0, linkedin: 0, saved: 0 });
+  });
+
+  test("passes {{booking_link}} to the CRM, which replaces it", async () => {
+    const setup = dependencies({ findCrmConversation: async () => crmConversation });
+    await sendFromLinkedinInbox(
+      { connectionId: connection.id, text: "Book here: {{booking_link}}", idempotencyKey: "request-token-crm" },
+      setup.value,
+    );
+    assert.deepEqual(setup.calls, { crm: 1, linkedin: 0, saved: 0 });
+  });
+
   test("routes a non-CRM conversation through the native LinkedIn sender", async () => {
     const setup = dependencies();
     const result = await sendFromLinkedinInbox(
