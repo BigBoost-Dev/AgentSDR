@@ -155,6 +155,10 @@ const AGENT_PLAY_LEAD_S = 0.03;
 /** After the agent's goodbye has played, this long before End call is pressed. */
 const AGENT_HANGUP_GRACE_MS = 800;
 
+/** While a call sits on "Connecting…": a transport snapshot every CONNECTING_PROBE_MS, at most CONNECTING_PROBES. */
+const CONNECTING_PROBE_MS = 2_500;
+const CONNECTING_PROBES = 4;
+
 type Session = {
   callId: string;
   /** WhatsApp's own microphone track for the call. */
@@ -181,6 +185,9 @@ type Session = {
   lastStatusText: string | null;
   /** Where the call UI was last seen, reported when it changes. */
   lastWhere: string | null;
+  /** When WhatsApp first said "Connecting…" before a pick-up, and how many transport snapshots were logged since. */
+  connectingAt: number | null;
+  connectingProbes: number;
   /** Running from the moment the call opened the microphone. */
   recording: Recording;
   watch: number;
@@ -274,7 +281,18 @@ async function describeCallTransport(): Promise<string[]> {
     lines.push(`peer ${pc.connectionState} found: ${[...counts].map(([k, n]) => `${k}×${n}`).join(" ") || "no local candidates"}; udp pairs: ${udpStates}`);
     const pair = [...byId.values()].find((r) => r.type === "candidate-pair" && (r.nominated || r.selected) && r.state === "succeeded");
     if (!pair) {
-      lines.push(`peer ${pc.connectionState}, no selected route yet`);
+      // Which routes ICE is trying and how far each got: why "Connecting…" never ends.
+      const tried = [...byId.values()]
+        .filter((r) => r.type === "candidate-pair")
+        .slice(0, 6)
+        .map((r) => {
+          const l = byId.get(String(r.localCandidateId));
+          const m = byId.get(String(r.remoteCandidateId));
+          return `${l?.candidateType}/${l?.protocol} → ${m?.candidateType}/${m?.protocol} ${m?.address ?? "?"}:${m?.port ?? "?"} ${r.state} (sent ${r.requestsSent ?? 0}, answered ${r.responsesReceived ?? 0})`;
+        });
+      const remotes = [...byId.values()].filter((r) => r.type === "remote-candidate").map((r) => `${r.candidateType}/${r.protocol} ${r.address ?? "?"}:${r.port ?? "?"}`);
+      lines.push(`peer ${pc.connectionState} (ice ${pc.iceConnectionState}, gathering ${pc.iceGatheringState}), no selected route yet; remote candidates: ${remotes.slice(0, 6).join(", ") || "none"}`);
+      for (const line of tried) lines.push(`  tried ${line}`);
       continue;
     }
     const local = byId.get(String(pair.localCandidateId));
@@ -532,6 +550,8 @@ function install(): void {
         endButtonMissing: 0,
         lastStatusText: null,
         lastWhere: null,
+        connectingAt: null,
+        connectingProbes: 0,
         recording,
         watch: 0,
       };
@@ -590,6 +610,21 @@ function install(): void {
     }
 
     if (current.answeredAt === null) {
+      // Accepted but not connected yet: snapshot the call's routes every few
+      // seconds, so a call that never gets past "Connecting…" says why.
+      if (agentRig?.callId === current.callId && /connecting/i.test(statusText ?? current.lastStatusText ?? "")) {
+        const now = Date.now();
+        current.connectingAt ??= now;
+        const waited = now - current.connectingAt;
+        if (current.connectingProbes < CONNECTING_PROBES && waited >= CONNECTING_PROBE_MS * (current.connectingProbes + 1)) {
+          current.connectingProbes += 1;
+          const seconds = Math.round(waited / 1000);
+          void describeCallTransport().then((lines) => {
+            if (!lines.length) agentLog(`still connecting after ${seconds} s; call transport: no live WebRTC peer connection`);
+            for (const line of lines) agentLog(`still connecting after ${seconds} s; call transport: ${line}`);
+          });
+        }
+      }
       // The call UI closed without the timer ever running: not answered.
       if (callUiGone) {
         if (agentRig?.callId === current.callId) agentLog("call screen gone before any pick-up was seen");
