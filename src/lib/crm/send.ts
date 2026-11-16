@@ -16,7 +16,6 @@ import { whatsappMessages } from "@/lib/whatsapp/schema";
 import { crmChannelSendProvider } from "./channels";
 import { insertConversationMessageInTransaction } from "./conversations";
 import { recordBookingLinkSentInTransaction, resolveBookingLinkInTransaction } from "./bookingLink";
-import { hasBookingLinkToken } from "./bookingLinkToken";
 import { appendCrmEvent } from "./events";
 import { isEmailDoNotContact, isPersonDoNotContact } from "./policies";
 import { CrmConfigurationValidationError } from "./categories";
@@ -427,7 +426,9 @@ async function finishSuccessfulSend(
           .where(eq(crmConversations.id, conversation.id));
       }
     }
-    if (hasBookingLinkToken(draft.editedBodyText?.trim() || draft.aiBodyText, draft.editedBodyHtml ?? draft.aiBodyHtml)) {
+    // Counted by what went out: the record's code in the sent body, whether
+    // it came from {{booking_link}} or a pasted link that was given the code.
+    if (record.bookingCode && prepared.request.bodyText.includes(`metadata[c]=${record.bookingCode}`)) {
       await recordBookingLinkSentInTransaction(tx, record.id, now);
     }
     const { message } = await insertConversationMessageInTransaction(tx, {

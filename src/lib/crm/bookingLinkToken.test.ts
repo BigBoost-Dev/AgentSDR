@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  codePlainBookingLinks,
   hasBookingLinkToken,
+  hasPlainBookingLink,
+  isOurBookingUrl,
   parseBookingUrl,
   replaceBookingLinkToken,
   replaceBookingLinkTokenInHtml,
@@ -49,5 +52,40 @@ describe("parseBookingUrl", () => {
     expect(parseBookingUrl("javascript:alert(1)").ok).toBe(false);
     expect(parseBookingUrl(42).ok).toBe(false);
     expect(parseBookingUrl(`https://cal.com/${"a".repeat(600)}`).ok).toBe(false);
+  });
+});
+
+describe("a pasted booking link", () => {
+  const PAGE = "https://cal.com/acme/30min";
+
+  test("is ours on the same host and Cal.com user, any event, with or without www", () => {
+    expect(isOurBookingUrl("https://cal.com/acme/30min", PAGE)).toBe(true);
+    expect(isOurBookingUrl("https://www.cal.com/ACME/60min", PAGE)).toBe(true);
+    expect(isOurBookingUrl("https://cal.com/someone-else/30min", PAGE)).toBe(false);
+    expect(isOurBookingUrl("https://calendly.com/acme/30min", PAGE)).toBe(false);
+    expect(isOurBookingUrl("https://book.acme.com/anything", "https://book.acme.com")).toBe(true);
+  });
+
+  test("gets the record's code, keeping sentence punctuation outside the link", () => {
+    expect(codePlainBookingLinks("Sure, here is the link - https://cal.com/acme/30min.", PAGE, "k7p2q"))
+      .toBe("Sure, here is the link - https://cal.com/acme/30min?metadata[c]=k7p2q.");
+    expect(codePlainBookingLinks("(cal.com link: https://cal.com/acme/60min)", PAGE, "k7p2q"))
+      .toBe("(cal.com link: https://cal.com/acme/60min?metadata[c]=k7p2q)");
+  });
+
+  test("keeps the link's own query and leaves an already-coded link alone", () => {
+    expect(codePlainBookingLinks("https://cal.com/acme/30min?month=2026-11", PAGE, "k7p2q"))
+      .toBe("https://cal.com/acme/30min?month=2026-11&metadata[c]=k7p2q");
+    const coded = "https://cal.com/acme/30min?metadata[c]=zzzzz";
+    expect(codePlainBookingLinks(coded, PAGE, "k7p2q")).toBe(coded);
+    expect(hasPlainBookingLink(coded, PAGE)).toBe(false);
+  });
+
+  test("leaves other links alone and codes both the href and the text in HTML", () => {
+    expect(codePlainBookingLinks("See https://acme.com/case-study", PAGE, "k7p2q")).toBe("See https://acme.com/case-study");
+    expect(codePlainBookingLinks('<a href="https://cal.com/acme/30min">https://cal.com/acme/30min</a>', PAGE, "k7p2q"))
+      .toBe('<a href="https://cal.com/acme/30min?metadata[c]=k7p2q">https://cal.com/acme/30min?metadata[c]=k7p2q</a>');
+    expect(hasPlainBookingLink("Book: https://cal.com/acme/30min", PAGE)).toBe(true);
+    expect(hasPlainBookingLink("No link here", PAGE)).toBe(false);
   });
 });

@@ -49,6 +49,79 @@ export function replaceBookingLinkTokenInHtml(html: string, link: string): strin
     .replace(tokenPattern(), () => `<a href="${escaped}">${escaped}</a>`);
 }
 
+// --- Plain booking links -------------------------------------------------------
+
+/** A URL in a message body; trailing sentence punctuation is not part of it. */
+const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi;
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}*_]+$/;
+/** The booking code's key in a Cal.com link (engineRules.ts CALCOM_BOOKING_METADATA). */
+const CODE_PARAM = "metadata[c]";
+
+function parseUrl(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+const bareHost = (url: URL) => url.hostname.toLowerCase().replace(/^www\./, "");
+const firstSegment = (url: URL) => url.pathname.split("/").filter(Boolean)[0]?.toLowerCase() ?? null;
+
+/**
+ * A link to our booking page, or to another event of the same Cal.com user or
+ * team (cal.com/acme/30min and cal.com/acme/60min alike): same host, ignoring
+ * www., and the same first path segment when the booking page has one.
+ */
+export function isOurBookingUrl(candidate: string, bookingUrl: string): boolean {
+  const link = parseUrl(candidate);
+  const page = parseUrl(bookingUrl);
+  if (!link || !page || bareHost(link) !== bareHost(page)) return false;
+  const owner = firstSegment(page);
+  return owner === null || firstSegment(link) === owner;
+}
+
+/** The link with the record's booking code in its metadata (`metadata[c]=…`), brackets unescaped as bookingLinkFor writes them. */
+export function withBookingCode(link: string, code: string): string {
+  const url = parseUrl(link);
+  if (!url) return link;
+  url.searchParams.set(CODE_PARAM, code);
+  return url.toString().replace(/metadata%5B([A-Za-z]+)%5D=/g, "metadata[$1]=");
+}
+
+function eachPlainBookingLink(text: string, bookingUrl: string, replace: (url: string) => string): string {
+  return text.replace(URL_PATTERN, (match) => {
+    const trailing = match.match(TRAILING_PUNCTUATION)?.[0] ?? "";
+    const url = trailing ? match.slice(0, -trailing.length) : match;
+    // Already coded (ours or forwarded), or HTML-escaped query text we must not re-encode.
+    if (url.includes(CODE_PARAM) || url.includes("metadata%5Bc%5D") || url.includes("&amp;")) return match;
+    if (!isOurBookingUrl(url, bookingUrl)) return match;
+    return replace(url) + trailing;
+  });
+}
+
+/** True when the body links to our booking page without a booking code (a pasted link, not `{{booking_link}}`). */
+export function hasPlainBookingLink(text: string | null | undefined, bookingUrl: string): boolean {
+  if (!text) return false;
+  let found = false;
+  eachPlainBookingLink(text, bookingUrl, (url) => {
+    found = true;
+    return url;
+  });
+  return found;
+}
+
+/**
+ * Every uncoded link to our booking page gets the record's booking code, so a
+ * link pasted by hand (or written by the AI despite the prompt) is tracked
+ * like `{{booking_link}}`. Works on plain text and on HTML (href values and
+ * visible text alike).
+ */
+export function codePlainBookingLinks(text: string, bookingUrl: string, code: string): string {
+  return eachPlainBookingLink(text, bookingUrl, (url) => withBookingCode(url, code));
+}
+
 export type BookingUrlParse = { ok: true; value: string | null } | { ok: false; error: string };
 
 /** The CRM booking page setting: an http(s) URL, or empty for none. */

@@ -18,7 +18,9 @@ import { inOrg } from "@/lib/tenancy/scope";
 import {
   BOOKING_LINK_TOKEN,
   CRM_BOOKING_CODE_LENGTH,
+  codePlainBookingLinks,
   hasBookingLinkToken,
+  hasPlainBookingLink,
   replaceBookingLinkToken,
   replaceBookingLinkTokenInHtml,
 } from "./bookingLinkToken";
@@ -71,27 +73,43 @@ export async function crmBookingCodeInTransaction(tx: CrmTransaction, recordId: 
 
 /**
  * Puts the record's booking link wherever the body says `{{booking_link}}`
- * (in HTML, as a link). Unchanged, with `used: false`, when it does not; a
- * conflict a person can act on when it does and no booking page is set.
+ * (in HTML, as a link), and gives the record's code to any plain link to our
+ * booking page pasted instead (codePlainBookingLinks) — so a link sent "by
+ * mistake" is tracked too. Unchanged, with `used: false`, when there is
+ * neither; a conflict a person can act on when the token is there and no
+ * booking page is set.
  */
 export async function resolveBookingLinkInTransaction(
   tx: CrmTransaction,
   input: { recordId: string; pipelineId: string; bodyText: string; bodyHtml: string | null },
 ): Promise<{ bodyText: string; bodyHtml: string | null; used: boolean }> {
-  if (!hasBookingLinkToken(input.bodyText, input.bodyHtml)) {
-    return { bodyText: input.bodyText, bodyHtml: input.bodyHtml, used: false };
-  }
+  const unchanged = { bodyText: input.bodyText, bodyHtml: input.bodyHtml, used: false };
+  const hasToken = hasBookingLinkToken(input.bodyText, input.bodyHtml);
+  const mayHaveLink = /https?:\/\//i.test(input.bodyText) || /https?:\/\//i.test(input.bodyHtml ?? "");
+  if (!hasToken && !mayHaveLink) return unchanged;
   const bookingUrl = await crmBookingUrl(tx, input.pipelineId);
+  if (!hasToken) {
+    if (!bookingUrl || !(hasPlainBookingLink(input.bodyText, bookingUrl) || hasPlainBookingLink(input.bodyHtml, bookingUrl))) {
+      return unchanged;
+    }
+    const code = await crmBookingCodeInTransaction(tx, input.recordId);
+    return {
+      bodyText: codePlainBookingLinks(input.bodyText, bookingUrl, code),
+      bodyHtml: input.bodyHtml === null ? null : codePlainBookingLinks(input.bodyHtml, bookingUrl, code),
+      used: true,
+    };
+  }
   if (!bookingUrl) {
     throw new CrmConflictError(`Set your booking link in CRM settings before sending a message with ${BOOKING_LINK_TOKEN}`);
   }
-  const link = bookingLinkFor(bookingUrl, await crmBookingCodeInTransaction(tx, input.recordId));
+  const code = await crmBookingCodeInTransaction(tx, input.recordId);
+  const link = bookingLinkFor(bookingUrl, code);
   if (!link) {
     throw new CrmConflictError(`The booking link in CRM settings is not a valid URL; fix it before sending a message with ${BOOKING_LINK_TOKEN}`);
   }
   return {
-    bodyText: replaceBookingLinkToken(input.bodyText, link),
-    bodyHtml: input.bodyHtml === null ? null : replaceBookingLinkTokenInHtml(input.bodyHtml, link),
+    bodyText: codePlainBookingLinks(replaceBookingLinkToken(input.bodyText, link), bookingUrl, code),
+    bodyHtml: input.bodyHtml === null ? null : codePlainBookingLinks(replaceBookingLinkTokenInHtml(input.bodyHtml, link), bookingUrl, code),
     used: true,
   };
 }

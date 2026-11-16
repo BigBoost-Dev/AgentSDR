@@ -119,7 +119,7 @@ function BookingLinkSection() {
     <Frame>
       <FrameHeader
         title="Booking link"
-        description={<>Write {BOOKING_LINK_TOKEN} in a CRM message (or let the AI draft do it) and it becomes this booking page with the lead&apos;s own code, so AgentSDR sees when they book.</>}
+        description={<>Write {BOOKING_LINK_TOKEN} in a CRM message (or let the AI draft do it) and it becomes this booking page with the lead&apos;s own code, so AgentSDR sees when they book. A link to this Cal.com page pasted by hand gets the code too.</>}
       />
       <FramePanel className="space-y-3 p-4 sm:p-4">
         {!loaded ? (

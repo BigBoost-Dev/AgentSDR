@@ -307,7 +307,9 @@ Do Not Contact, closed or paused records.
 carry `{{booking_link}}`; `sendDraft` replaces it with the record's own
 Cal.com link (`crm_settings.booking_url` + a 5-character
 `crm_records.booking_code` in `metadata[c]`, longer than AI-campaign codes so
-they never collide) and counts the send (`booking_link_sent_count`). The Cal.com
+they never collide) and counts the send (`booking_link_sent_count`). A plain link to the same
+Cal.com user or team pasted instead gets the code too (`codePlainBookingLinks`,
+`bookingLinkToken.ts`); an already-coded link is left alone. The Cal.com
 webhook (`/api/webhooks/calcom`, after the AI-campaign handling) matches a
 booking to a record by that code, the booking's uid, an AI-campaign code's
 person, or the attendee's email; it books or moves the open meeting and
