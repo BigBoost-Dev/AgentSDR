@@ -93,16 +93,18 @@ export type RecordStage = {
 
 /**
  * A booking moves a record to Meeting Booked unless it is already there or
- * further along: a customer stays a customer, and a ranked stage at or past
- * Meeting Booked's rank stays. A record with no stage, or one off the funnel
- * (no rank), moves.
+ * further along: a customer stays a customer, and a ranked stage past
+ * Meeting Booked's rank stays. A stage at the same rank moves — that is
+ * Meeting No Show, and a no-show who books again is booked, not still
+ * waiting to rebook (the No-show chase kept running for one such lead). A
+ * record with no stage, or one off the funnel (no rank), moves.
  */
 export function bookingMovesStage(record: RecordStage, target: { id: string; stageRank: number | null }): boolean {
   if (record.subcategoryId === target.id) return false;
   if (record.categoryKey === "customer") return false;
   if (!record.subcategoryId || record.stageRank === null) return true;
   if (target.stageRank === null) return false;
-  return record.stageRank < target.stageRank;
+  return record.stageRank <= target.stageRank;
 }
 
 /** The stage-move note a booking leaves; drafts read it as what happened (stageMove.ts). */

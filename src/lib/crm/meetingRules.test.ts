@@ -73,6 +73,10 @@ describe("bookingMovesStage", () => {
     expect(bookingMovesStage({ categoryKey: "interested", subcategoryId: "requested", stageRank: 20 }, target)).toBe(true);
   });
 
+  test("moves a no-show (same rank as Meeting Booked) who books again", () => {
+    expect(bookingMovesStage({ categoryKey: "interested", subcategoryId: "no_show", stageRank: 30 }, target)).toBe(true);
+  });
+
   test("leaves one already there or further along, and a customer", () => {
     expect(bookingMovesStage({ categoryKey: "interested", subcategoryId: "booked", stageRank: 30 }, target)).toBe(false);
     expect(bookingMovesStage({ categoryKey: "interested", subcategoryId: "done", stageRank: 40 }, target)).toBe(false);
