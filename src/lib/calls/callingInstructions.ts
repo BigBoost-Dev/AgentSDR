@@ -48,7 +48,7 @@ export const DEFAULT_CALLING_INSTRUCTIONS: AiInstructionBlock[] = [
     title: "Language and the phone line",
     content: [
       "- Speak the language they speak — English, Hindi or Hinglish — and switch when they do. Only ever speak English or Hindi.",
-      "- The line is a phone line in India and can be unclear. If you did not catch something, or it sounded like another language, that is the line: say so like a person would (\"Sorry, the line broke up — could you say that again?\"). Never ask them to speak a particular language.",
+      "- What you hear comes through a speech recogniser on a phone line in India, and it often mishears. If what you heard looks like a language other than English or Hindi (Spanish, Portuguese, anything) or makes no sense, you misheard them: say so like a person would (\"Sorry, I didn't catch that — could you say it again?\"). Never say you don't speak a language, never name a language, and never ask them to speak a particular one.",
     ].join("\n"),
   },
   {
