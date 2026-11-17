@@ -1,13 +1,13 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { channelRules } from "@/lib/channels/rules.server";
 import { companies, people } from "@/lib/leads/schema";
 import { withLeadTransaction } from "@/lib/leads/records";
 import { personCompanyName } from "@/lib/leads/companyName";
 import { organizationPhoneCountry } from "@/lib/calls/phone.server";
-import { findOrCreateContactPerson, resolveImportRow, contactInOrg } from "@/lib/calls/campaigns";
+import { findOrCreateContactPerson, removeCampaignContact, resolveImportRow, contactInOrg } from "@/lib/calls/campaigns";
 import { crmKnowledgeDocuments } from "@/lib/crm/schema";
 import {
   importMappingError,
@@ -24,7 +24,7 @@ import {
 } from "@/lib/whatsapp/campaigns/contract";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 import { parseAgentName, parseAgentVoice } from "@/lib/calls/liveAgent";
-import { AGENT_OUTCOMES, type AgentOutcomeKind, type CallCampaignStatus } from "@/lib/calls/contract";
+import { AGENT_OUTCOMES, TERMINAL_CALL_STATUSES, type AgentOutcomeKind, type CallCampaignStatus } from "@/lib/calls/contract";
 import { CallApiError, expireStaleCalls, startCall } from "@/lib/calls/sessions";
 import { isPersonDoNotContact } from "@/lib/crm/policies";
 import { agentBrief } from "./brief.server";
@@ -769,6 +769,29 @@ export async function updateAiLead(campaignId: string, contactId: string, input:
     });
   }
   return leadView(campaign, await loadContact(campaignId, contactId));
+}
+
+/**
+ * Takes a lead off the campaign (removeCampaignContact): its step runs and
+ * campaign messages go with it, while the person, their calls, recordings
+ * and transcripts stay. Refused while a call or message to them is under
+ * way, so the engine never settles a step whose lead is gone.
+ */
+export async function removeAiLead(campaignId: string, contactId: string): Promise<void> {
+  await loadCampaignRow(campaignId);
+  await loadContact(campaignId, contactId);
+  const [running] = await db
+    .select({ id: callCampaignStepRuns.id })
+    .from(callCampaignStepRuns)
+    .where(and(eq(callCampaignStepRuns.contactId, contactId), eq(callCampaignStepRuns.status, "started")))
+    .limit(1);
+  const [openCall] = await db
+    .select({ id: callSessions.id })
+    .from(callSessions)
+    .where(and(inOrg(callSessions), eq(callSessions.campaignContactId, contactId), notInArray(callSessions.status, [...TERMINAL_CALL_STATUSES])))
+    .limit(1);
+  if (running || openCall) throw new CallApiError(409, "A call or message to this lead is under way. Remove them once it has finished.");
+  await removeCampaignContact(contactId);
 }
 
 export async function getAiLeadDetail(campaignId: string, contactId: string): Promise<AiLeadDetail> {

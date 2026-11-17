@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   RiArrowLeftSLine,
   RiArrowRightSLine,
+  RiDeleteBinLine,
   RiErrorWarningLine,
   RiFileExcel2Line,
   RiLoader4Line,
@@ -28,7 +29,7 @@ import { Skeleton } from "@/components/page/Skeletons";
 import { relativeTime } from "@/components/whatsapp/campaigns/metrics";
 import { AGENT_OUTCOME_LABELS } from "@/lib/calls/contract";
 import type { AiCampaignLead, AiLeadsImportResponse, ListAiLeadsResponse } from "@/lib/calls/aiCampaigns/api";
-import { aiLeadsEndpoint, aiLeadsUploadEndpoint, listAiLeads, updateAiLead } from "@/lib/calls/aiCampaigns/client";
+import { aiLeadsEndpoint, aiLeadsUploadEndpoint, listAiLeads, removeAiLead, updateAiLead } from "@/lib/calls/aiCampaigns/client";
 import { AI_CONTACT_STATUSES, AI_CONTACT_STATUS_LABELS, AI_OPEN_STATUSES, type AiContactStatus } from "@/lib/calls/aiCampaigns/contract";
 import { cn } from "@/utils/cn";
 import { AiLeadDrawer } from "./AiLeadDrawer";
@@ -115,6 +116,28 @@ export function AiLeadsTab({
       refreshAll();
     } catch (cause) {
       await dialogs.alert({ title: action === "stop" ? "Could not stop the lead" : "Could not queue the lead again", description: errorText(cause), variant: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(lead: AiCampaignLead) {
+    const who = lead.name || lead.phone;
+    const ok = await dialogs.confirm({
+      title: `Remove ${who} from this campaign?`,
+      description: "The AI stops calling and messaging them. They stay in People, and their past calls, recordings and transcripts are kept.",
+      confirmLabel: "Remove",
+      variant: "error",
+    });
+    if (!ok) return;
+    setBusyId(lead.id);
+    try {
+      await removeAiLead(campaignId, lead.id);
+      if (openId === lead.id) setOpenId(null);
+      setNotice(`${who} removed from the campaign`);
+      refreshAll();
+    } catch (cause) {
+      await dialogs.alert({ title: "Could not remove the lead", description: errorText(cause), variant: "error" });
     } finally {
       setBusyId(null);
     }
@@ -244,7 +267,11 @@ export function AiLeadsTab({
                                   Queue again
                                 </Dropdown.Item>
                               )}
-                              {!open && !requeueable && <Dropdown.Item disabled>No actions</Dropdown.Item>}
+                              {(open || requeueable) && <Dropdown.Separator />}
+                              <Dropdown.Item destructive onSelect={() => void remove(lead)}>
+                                <Dropdown.ItemIcon as={RiDeleteBinLine} />
+                                Remove from campaign
+                              </Dropdown.Item>
                             </Dropdown.Content>
                           </Dropdown.Root>
                         </div>

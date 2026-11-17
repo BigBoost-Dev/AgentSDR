@@ -3,7 +3,7 @@ import { readCrmJson } from "@/lib/crm/categories";
 import { requireCrmMutationContext } from "@/lib/crm/http";
 import { withOrgContext } from "@/lib/auth/context";
 import { callApiErrorResponse } from "@/lib/calls/sessions";
-import { getAiLeadDetail, parseUpdateAiLeadRequest, updateAiLead } from "@/lib/calls/aiCampaigns/campaigns.server";
+import { getAiLeadDetail, parseUpdateAiLeadRequest, removeAiLead, updateAiLead } from "@/lib/calls/aiCampaigns/campaigns.server";
 import { runInOrganization } from "@/lib/tenancy/scope";
 
 type Params = { params: Promise<{ id: string; contactId: string }> };
@@ -25,6 +25,20 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const { id, contactId } = await params;
     const body = parseUpdateAiLeadRequest(await readCrmJson(request));
     return await runInOrganization(ctx.organizationId, async () => Response.json({ lead: await updateAiLead(id, contactId, body, ctx.userName) }));
+  } catch (error) {
+    return callApiErrorResponse(error);
+  }
+}
+
+/** Takes the lead off the campaign; the person, their calls and recordings stay. 409 while a call or message is under way. */
+export async function DELETE(request: NextRequest, { params }: Params) {
+  try {
+    const ctx = await requireCrmMutationContext(request);
+    const { id, contactId } = await params;
+    return await runInOrganization(ctx.organizationId, async () => {
+      await removeAiLead(id, contactId);
+      return Response.json({ ok: true });
+    });
   } catch (error) {
     return callApiErrorResponse(error);
   }

@@ -59,6 +59,9 @@ export const addPeopleToAiCampaign = (id: string, personIds: string[]) => aiApi<
 export const getAiLead = (id: string, contactId: string) => aiApi<AiLeadDetail>(`${BASE}/${id}/leads/${contactId}`);
 export const updateAiLead = (id: string, contactId: string, request: UpdateAiLeadRequest) =>
   aiApi<{ lead: AiCampaignLead }>(`${BASE}/${id}/leads/${contactId}`, json("PATCH", request));
+/** Takes the lead off the campaign; the person, their calls and recordings stay. */
+export const removeAiLead = (id: string, contactId: string) =>
+  aiApi<{ ok: true }>(`${BASE}/${id}/leads/${contactId}`, { method: "DELETE" });
 /** A call to this lead now (a real WhatsApp call, outside the sequence): the AI agent's, or with `remoteRep` the rep's. */
 export const callAiLead = (id: string, contactId: string, request: CallAiLeadRequest = {}) =>
   aiApi<CallAiLeadResponse>(`${BASE}/${id}/leads/${contactId}/call`, json("POST", request));
