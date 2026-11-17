@@ -176,10 +176,10 @@ export class LiveAgent {
   }
 
   /**
-   * WhatsApp shows "Connecting…": the lead has accepted, and the audio link
-   * takes a few seconds more (2.5 s on the call worker, 23 Oct 2026). The
-   * greeting is generated now and held, so it plays as soon as they have said
-   * hello instead of after the model's ~1 s to start speaking.
+   * WhatsApp shows "Ringing…" (or "Connecting…"): the greeting is generated
+   * now and held, so it plays as soon as they have said hello instead of
+   * after the model's ~1–2 s to start speaking. A call with no "Connecting…"
+   * phase (no proxy) goes straight from ringing to answered.
    */
   prepareGreeting(): void {
     if (this.greetPrepared || this.leadSpoke) return;
@@ -190,7 +190,7 @@ export class LiveAgent {
     }
     this.greetPrepared = true;
     this.holding = true;
-    this.handlers.trace("AI agent: lead accepted — preparing the greeting while WhatsApp connects");
+    this.handlers.trace("AI agent: preparing the greeting before the pick-up");
     this.sendGreeting();
   }
 
@@ -297,7 +297,7 @@ export class LiveAgent {
     this.holding = false;
     const held = this.held.splice(0);
     const waited = Date.now() - this.pickedUpAt;
-    this.handlers.trace(`AI agent: greeting ${waited} ms after the pick-up, ${why} (${held.length ? "prepared during Connecting…" : "still being prepared"})`);
+    this.handlers.trace(`AI agent: greeting ${waited} ms after the pick-up, ${why} (${held.length ? "prepared before the pick-up" : "still being prepared"})`);
     for (const [pcm, rate] of held) this.play(pcm, rate);
   }
 

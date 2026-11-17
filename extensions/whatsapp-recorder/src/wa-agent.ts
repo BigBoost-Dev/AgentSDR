@@ -731,8 +731,11 @@ function onHookMessage(event: MessageEvent): void {
       break;
     case "call-status":
       trace(callId, `WhatsApp shows "${data.text}"`);
-      // They accepted; the audio link is still being set up.
-      if (/^connecting/i.test(data.text.trim())) agent?.prepareGreeting();
+      // The greeting is made while it rings and held until they pick up. It
+      // used to wait for "Connecting…", but with no proxy a call goes straight
+      // from ringing to answered: the greeting was never ready and the lead
+      // heard 3.5 s of silence, then hung up (Simran, 17 Nov 2026).
+      if (/^(ringing|connecting)/i.test(data.text.trim())) agent?.prepareGreeting();
       break;
     case "call-ui":
       trace(callId, "WhatsApp shows the call screen");
