@@ -194,6 +194,19 @@ export class LiveAgent {
     this.sendGreeting();
   }
 
+  /** Resolves true once the prepared greeting's first audio is held, false after `maxMs` or if the session closed. */
+  greetingHeld(maxMs: number): Promise<boolean> {
+    const until = Date.now() + maxMs;
+    return new Promise((resolve) => {
+      const check = () => {
+        if (this.held.length) return resolve(true);
+        if (this.closed || Date.now() >= until) return resolve(false);
+        setTimeout(check, 50);
+      };
+      check();
+    });
+  }
+
   /** The lead picked up (the call timer appeared): the model speaks first, after their hello. */
   greet(): void {
     this.pickedUp = true;

@@ -250,11 +250,28 @@ function answerCall(next: WaCall): BridgeResult {
   trace(next.callId, `WhatsApp tab: answering an incoming call (agent ${next.agent})`);
   stopRelay();
   toHook({ source: AGENT_SOURCE, type: "arm", callId: next.callId, agent: next.agent, monitor: false });
-  if (next.agent) startAgent(next.callId);
   phase({ kind: "ringing" });
-  toHook({ source: AGENT_SOURCE, type: "accept-call", callId: next.callId });
+  if (!next.agent) {
+    toHook({ source: AGENT_SOURCE, type: "accept-call", callId: next.callId });
+    return { ok: true };
+  }
+  // Answered at once, the caller heard 6 s of silence: their "Hello?" came
+  // before the session was ready, and Gemini took 5.7 s to greet (Simran,
+  // 17 Nov 2026). So it rings on while the greeting is made, then Accept.
+  startAgent(next.callId);
+  const session = agent;
+  session?.prepareGreeting();
+  const asked = Date.now();
+  void (session ? session.greetingHeld(ANSWER_GREETING_MAX_WAIT_MS) : Promise.resolve(false)).then((ready) => {
+    if (call?.callId !== next.callId) return;
+    trace(next.callId, ready ? `AI agent: greeting ready ${Date.now() - asked} ms after the ring — answering` : `AI agent: greeting not ready after ${ANSWER_GREETING_MAX_WAIT_MS / 1000} s — answering anyway`);
+    toHook({ source: AGENT_SOURCE, type: "accept-call", callId: next.callId });
+  });
   return { ok: true };
 }
+
+/** How long an incoming call rings on while the agent's greeting is made, before Accept regardless. */
+const ANSWER_GREETING_MAX_WAIT_MS = 5_000;
 
 /** `noCallButton`: the chat opened, but WhatsApp offers no way to call it. */
 function reportNotOnWhatsApp(target: WaCall, noCallButton = false): void {
