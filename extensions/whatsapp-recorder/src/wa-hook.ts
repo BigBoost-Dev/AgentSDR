@@ -641,10 +641,13 @@ function install(): void {
         // two and a half seconds ago.
         const now = Date.now();
         answer(current, true, Math.max(current.recording.startedAt, now - (timerSeconds ?? 0) * 1000 - 500));
-      } else if (Date.now() - current.dialedAt > NO_TIMER_FALLBACK_MS && !STILL_RINGING.test(statusText ?? "")) {
+      } else if (ui.present && Date.now() - current.dialedAt > NO_TIMER_FALLBACK_MS && !STILL_RINGING.test(statusText ?? "")) {
         // No timer seen in a minute — WhatsApp's markup may have changed, so
         // keep the recording rather than discard the call. Not while WhatsApp
-        // itself still says "Calling…"/"Ringing…": that is a long ring.
+        // itself still says "Calling…"/"Ringing…": that is a long ring. And
+        // only while the call screen shows: on the tick it closed (a ring
+        // that ran out after 64 s), this took the hang-up for a pick-up, and
+        // the agent greeted an empty line (Shruti, 17 Nov 2026).
         answer(current, false, current.recording.startedAt);
       }
       current.lastTimerText = timerText;
