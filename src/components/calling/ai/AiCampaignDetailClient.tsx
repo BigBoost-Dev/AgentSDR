@@ -16,6 +16,7 @@ import {
   RiRocketLine,
   RiSettings3Line,
   RiSmartphoneLine,
+  RiSpeakLine,
   RiTeamLine,
 } from "@remixicon/react";
 import * as Button from "@/components/alignui/button";
@@ -34,6 +35,7 @@ import { AiCampaignOverview } from "./AiCampaignOverview";
 import { AiLeadsTab } from "./AiLeadsTab";
 import { AiSequenceTab } from "./AiSequenceTab";
 import { AiSettingsTab } from "./AiSettingsTab";
+import { VoiceCompareTab } from "./VoiceCompareTab";
 import type { AiCampaignTab } from "./tabs";
 
 const REFRESH_MS = 30_000;
@@ -203,6 +205,7 @@ export function AiCampaignDetailClient({ campaignId, initialTab }: { campaignId:
           { value: "overview", label: "Overview", icon: RiBarChart2Line },
           { value: "leads", label: "Leads", icon: RiTeamLine, count: campaign.leads },
           { value: "sequence", label: "Sequence", icon: RiListOrdered2, count: campaign.stepCount },
+          { value: "compare", label: "Compare voices", icon: RiSpeakLine },
           { value: "settings", label: "Settings", icon: RiSettings3Line },
         ]}
       />
@@ -216,6 +219,7 @@ export function AiCampaignDetailClient({ campaignId, initialTab }: { campaignId:
         <div hidden={tab !== "sequence"}>
           <AiSequenceTab campaign={campaign} stats={stats?.perStep} onSaved={() => void load()} />
         </div>
+        {tab === "compare" && <VoiceCompareTab campaign={campaign} />}
         <div hidden={tab !== "settings"}>
           <AiSettingsTab campaign={campaign} onSaved={() => void load()} onToggle={() => void toggle()} onArchive={() => void archive()} toggling={busy} />
         </div>

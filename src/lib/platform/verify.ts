@@ -20,6 +20,7 @@ export async function verifyPlatformCredentials<K extends PlatformKey>(
   if (key === "gologin") return verifyGoLogin(credentials as PlatformCredentials["gologin"]);
   if (key === "calcom") return verifyCalcom(credentials as PlatformCredentials["calcom"]);
   if (key === "langfuse") return verifyLangfuse(credentials as PlatformCredentials["langfuse"]);
+  if (key === "elevenlabs") return verifyElevenLabs(credentials as PlatformCredentials["elevenlabs"]);
   throw new Error("Unknown integration");
 }
 
@@ -92,6 +93,22 @@ async function verifyLangfuse({ baseUrl, publicKey, secretKey }: PlatformCredent
   if (!response.ok) throw new Error(`Langfuse answered ${response.status}`);
   const body = (await response.json().catch(() => null)) as { data?: unknown } | null;
   if (!body || !Array.isArray(body.data)) throw new Error("That host did not answer like Langfuse — check the address");
+}
+
+/** The key's own user record: 401 for a wrong key; a key without user access still answers the voices list. */
+async function verifyElevenLabs({ apiKey }: PlatformCredentials["elevenlabs"]): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("https://api.elevenlabs.io/v1/voices?page_size=1", {
+      headers: { "xi-api-key": apiKey, accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new Error("Could not reach ElevenLabs");
+  }
+  if (response.status === 401) throw new Error("ElevenLabs rejected this API key");
+  if (response.status === 403) throw new Error("This ElevenLabs key may not read voices — give it access to Voices, Text to Speech and ElevenLabs Agents");
+  if (!response.ok) throw new Error(`ElevenLabs answered ${response.status}`);
 }
 
 async function verifyGoogle(credentials: PlatformCredentials["google"]): Promise<void> {

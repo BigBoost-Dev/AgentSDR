@@ -114,4 +114,8 @@ For this person in particular: {{lead_instructions}}{{/lead_instructions}}`,
     template: `Hi, this is {{agent_name}} — did I catch you at an okay time?
 Namaste, main {{agent_name}} bol {{#female}}rahi{{/female}}{{^female}}raha{{/female}} hoon — kya abhi do minute baat ho sakti hai?`,
   },
+  "calls/elevenlabs-first-message": {
+    description: "What the ElevenLabs phone agent says the moment the lead picks up (spoken as written; Gemini instead greets from calls/note-greeting).",
+    template: "Hi, is this {{first_name}}?",
+  },
 } satisfies Record<string, PromptDefinition>;

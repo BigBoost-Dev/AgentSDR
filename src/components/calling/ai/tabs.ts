@@ -4,8 +4,8 @@
  * client module is only a reference on the server (calling .includes on it
  * threw, and the page failed to load — 27 Oct 2026).
  */
-export type AiCampaignTab = "overview" | "leads" | "sequence" | "settings";
-export const AI_CAMPAIGN_TABS: readonly AiCampaignTab[] = ["overview", "leads", "sequence", "settings"];
+export type AiCampaignTab = "overview" | "leads" | "sequence" | "compare" | "settings";
+export const AI_CAMPAIGN_TABS: readonly AiCampaignTab[] = ["overview", "leads", "sequence", "compare", "settings"];
 
 export function isAiCampaignTab(value: unknown): value is AiCampaignTab {
   return typeof value === "string" && (AI_CAMPAIGN_TABS as readonly string[]).includes(value);

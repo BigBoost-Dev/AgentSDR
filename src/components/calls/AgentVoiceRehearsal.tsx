@@ -7,6 +7,7 @@ import type { AgentTokenResponse } from "@/lib/calls/contract";
 import { createDownsampler } from "../../../extensions/whatsapp-recorder/src/downsample";
 import { LiveAgent } from "../../../extensions/whatsapp-recorder/src/live-agent";
 import { toolLabel, type Tool } from "./AgentRehearsal";
+import { medianMs, recordConversation, TAP_WORKLET, type ConversationRecording } from "./rehearsalAudio";
 
 type Line = { who: "lead" | "agent"; text: string; cut?: boolean } | { who: "tool"; tool: Tool };
 type Phase = "idle" | "connecting" | "ringing" | "live" | "ended";
@@ -16,18 +17,6 @@ const BLOCK_SECONDS = 0.04;
 /** "Connecting…" on a real call: the greeting is prepared, then the lead picks up. */
 const PICKUP_AFTER_MS = 1_000;
 
-/** A worklet that hands the microphone's samples to the page, block by block. */
-const TAP_WORKLET = `
-class AgentsdrTap extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (channel) this.port.postMessage(channel.slice(0));
-    return true;
-  }
-}
-registerProcessor("agentsdr-tap", AgentsdrTap);
-`;
-
 /**
  * A rehearsal call by voice: talk to the AI agent with your microphone and
  * hear it answer, with the exact session a campaign call gets — the token
@@ -36,7 +25,7 @@ registerProcessor("agentsdr-tap", AgentsdrTap);
  * check-ins, outcome, hanging up after its goodbye). Nothing is placed or
  * saved.
  */
-export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name, voice }: {
+export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name, voice, compare = false }: {
   campaignId?: string;
   /** Rehearse as this lead of the campaign: their name, company, history and own instructions. */
   contactId?: string;
@@ -44,12 +33,16 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
   brief?: string;
   name?: string;
   voice?: string;
+  /** Compare voices: show each reply's delay and keep a recording to listen back to. */
+  compare?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [lines, setLines] = useState<Line[]>([]);
   const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
+  const [gaps, setGaps] = useState<number[]>([]);
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
 
@@ -69,6 +62,8 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
     setLines([]);
     setLog([]);
     setSeconds(0);
+    setGaps([]);
+    setRecordingUrl(null);
     setPhase("connecting");
 
     // Created in the click, so the browser lets it play.
@@ -92,6 +87,7 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
     let pickupTimer = 0;
     let tap: AudioWorkletNode | null = null;
     let source: MediaStreamAudioSourceNode | null = null;
+    let recording: ConversationRecording | null = null;
 
     const stop = (why?: string) => {
       if (ended) return;
@@ -99,6 +95,7 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
       window.clearTimeout(hangupTimer);
       window.clearTimeout(pickupTimer);
       agent.close();
+      if (recording) void recording.stop().then((url) => url && setRecordingUrl(url));
       tap?.port.close();
       tap?.disconnect();
       source?.disconnect();
@@ -120,6 +117,7 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
         const node = context.createBufferSource();
         node.buffer = buffer;
         node.connect(context.destination);
+        if (recording) node.connect(recording.input);
         const at = Math.max(context.currentTime + 0.02, playHead);
         node.start(at);
         playHead = at + buffer.duration;
@@ -138,6 +136,8 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
       },
       trace(step) {
         setLog((current) => [...current.slice(-80), step]);
+        const replied = /^AI agent: replied (\d+) ms after the lead's last sound$/.exec(step);
+        if (replied) setGaps((current) => [...current, Number(replied[1])]);
         // start() reports a refused token, and the session dropping, only here.
         const failed = /^AI agent: (no session — .*|disconnected .*)$/.exec(step);
         if (failed && !ended) {
@@ -182,6 +182,7 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
     try {
       await context.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP_WORKLET], { type: "application/javascript" })));
       source = context.createMediaStreamSource(microphone);
+      if (compare) recording = recordConversation(context, source);
       tap = new AudioWorkletNode(context, "agentsdr-tap");
       const downsample = createDownsampler(context.sampleRate, 16_000);
       const blockSize = Math.round(context.sampleRate * BLOCK_SECONDS);
@@ -269,6 +270,9 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
         </div>
       )}
 
+      {compare && gaps.length > 0 ? <ReplyGaps gaps={gaps} /> : null}
+      {compare && recordingUrl ? <audio controls src={recordingUrl} className="w-full" /> : null}
+
       {error ? <p className="text-paragraph-xs text-error-base">{error}</p> : null}
 
       {log.length > 0 && (
@@ -282,5 +286,16 @@ export function AgentVoiceRehearsal({ campaignId, contactId, stepId, brief, name
         </details>
       )}
     </div>
+  );
+}
+
+/** "Replies started 0.8 s, 1.1 s, 0.9 s after you stopped · median 0.9 s". */
+export function ReplyGaps({ gaps }: { gaps: number[] }) {
+  const median = medianMs(gaps);
+  return (
+    <p className="text-paragraph-xs text-text-sub-600">
+      Replies started {gaps.map((gap) => `${(gap / 1000).toFixed(1)} s`).join(", ")} after you stopped
+      {median !== null ? <span className="font-medium text-text-strong-950"> · median {(median / 1000).toFixed(2)} s</span> : null}
+    </p>
   );
 }

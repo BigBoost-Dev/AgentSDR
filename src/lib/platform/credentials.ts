@@ -328,6 +328,10 @@ function normalize<K extends PlatformKey>(key: K, raw: Record<string, string>): 
     const value: PlatformCredentials["langfuse"] = { baseUrl, publicKey: text("publicKey"), secretKey: text("secretKey") };
     return value as PlatformCredentials[K];
   }
+  if (key === "elevenlabs") {
+    const value: PlatformCredentials["elevenlabs"] = { apiKey: text("apiKey") };
+    return value as PlatformCredentials[K];
+  }
   const value: PlatformCredentials["r2"] = {
     accountId: text("accountId"),
     accessKeyId: text("accessKeyId"),

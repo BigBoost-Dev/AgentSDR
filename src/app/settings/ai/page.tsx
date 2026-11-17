@@ -23,6 +23,15 @@ export default async function AiSettingsPage() {
           </div>
           <PlatformConnection platformKey="langfuse" status={statuses.find((status) => status.key === "langfuse") ?? null} />
         </section>
+        <section className="flex flex-col gap-3 pt-4">
+          <div>
+            <h3 className="text-label-md text-text-strong-950">Voice agent (ElevenLabs)</h3>
+            <p className="mt-1 max-w-2xl text-paragraph-sm text-text-sub-600">
+              Optional. Connect ElevenLabs to try its phone agent beside Gemini on an AI campaign (Compare voices). AgentSDR sets up the agent in your ElevenLabs account itself.
+            </p>
+          </div>
+          <PlatformConnection platformKey="elevenlabs" status={statuses.find((status) => status.key === "elevenlabs") ?? null} />
+        </section>
       </ByokSettingsClient>
     </SettingsPage>
   );

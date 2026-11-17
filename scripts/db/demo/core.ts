@@ -244,8 +244,8 @@ function freePortraits(kind: "men" | "women"): number[] {
 // Platform integrations (placeholder credentials; nothing calls them)
 // ---------------------------------------------------------------------------
 
-// Langfuse stays unconnected: the demo never traces, and the AI provider page shows how to connect it.
-const PLACEHOLDER_CREDENTIALS: Record<Exclude<PlatformKey, "langfuse">, Record<string, string>> = {
+// Langfuse and ElevenLabs stay unconnected: the demo never traces or calls, and the AI provider page shows how to connect them.
+const PLACEHOLDER_CREDENTIALS: Record<Exclude<PlatformKey, "langfuse" | "elevenlabs">, Record<string, string>> = {
   unipile: { baseUrl: "https://api.unipile.example", apiKey: "demo-unipile-key", notifySecret: "demo-notify-secret" },
   google: {
     clientEmail: "agentsdr-sender@northwind-demo.iam.gserviceaccount.example",

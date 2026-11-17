@@ -16,7 +16,7 @@
 
 import { docsPageUrl } from "@/lib/support";
 
-export type PlatformKey = "unipile" | "google" | "r2" | "gologin" | "calcom" | "langfuse";
+export type PlatformKey = "unipile" | "google" | "r2" | "gologin" | "calcom" | "langfuse" | "elevenlabs";
 
 /** The decrypted credential object stored for each platform. */
 export type PlatformCredentials = {
@@ -64,6 +64,10 @@ export type PlatformCredentials = {
     publicKey: string;
     /** sk-lf-… */
     secretKey: string;
+  };
+  elevenlabs: {
+    /** An ElevenLabs API key (Developers → API keys), sk_… */
+    apiKey: string;
   };
 };
 
@@ -384,6 +388,31 @@ export const PLATFORM_INTEGRATIONS: readonly PlatformIntegration[] = [
       },
     ],
   },
+  {
+    key: "elevenlabs",
+    name: "ElevenLabs",
+    description: "A second voice engine for AI calls: ElevenLabs' phone agent hears the lead, thinks and speaks with Indian-English and Hindi voices. AgentSDR creates and updates the agent in your ElevenLabs account itself; you only connect the key.",
+    enables: ["Comparing ElevenLabs with Gemini on an AI campaign's calls", "Indian-English and Hindi voices for the AI agent"],
+    websiteUrl: "https://elevenlabs.io",
+    iconUrl: "https://www.google.com/s2/favicons?domain=elevenlabs.io&sz=64",
+    docsUrl: "https://elevenlabs.io/docs/eleven-agents/overview",
+    setupSteps: [
+      "In ElevenLabs, open Developers → API keys and create a key for AgentSDR.",
+      "Give it access to Text to Speech, Voices and ElevenLabs Agents (or leave it unrestricted).",
+      "Paste the key below and save. AgentSDR checks it with one call to ElevenLabs.",
+    ],
+    fields: [
+      {
+        key: "apiKey",
+        label: "API key",
+        placeholder: "sk_…",
+        help: "ElevenLabs → Developers → API keys. It is shown once, when you create it.",
+        inputType: "password",
+        required: true,
+        secret: true,
+      },
+    ],
+  },
 ];
 
 /** OpenRouter is connected on the AI provider page; the Integrations page only shows its card. */
@@ -401,6 +430,7 @@ export const PLATFORM_SETTINGS_HREF: Record<PlatformKey, string> = {
   gologin: "/settings/whatsapp-connection",
   calcom: "/settings/whatsapp-connection",
   langfuse: "/settings/ai",
+  elevenlabs: "/settings/ai",
 };
 
 /** Where that page sits in the Settings sidebar, for messages. */
@@ -411,6 +441,7 @@ export const PLATFORM_SETTINGS_LABEL: Record<PlatformKey, string> = {
   gologin: "Settings → WhatsApp → Integrations",
   calcom: "Settings → WhatsApp → Integrations",
   langfuse: "Settings → AI provider",
+  elevenlabs: "Settings → AI provider",
 };
 
 export function getPlatformIntegration(key: string): PlatformIntegration | null {
