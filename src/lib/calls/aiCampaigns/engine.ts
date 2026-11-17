@@ -575,20 +575,25 @@ export async function candidateStations(campaignIds: string[], dayStart: Date, n
   return db
     .select({
       station: callingStations,
+      // The station's columns are written out, qualified: in a single-table
+      // select list Drizzle prints ${callingStations.id} as a bare "id", which
+      // inside these subqueries bound to the call's own id. Nothing ever
+      // matched, so no number was ever busy and the daily call limit counted
+      // 0 calls: 15 calls went out on a warm-up day of 10 (16 Nov 2026).
       busy: sql<boolean>`(
         exists (select 1 from ${callSessions} busy_call
-                 where busy_call.organization_id = ${callingStations.organizationId}
-                   and busy_call.station_id = ${callingStations.id}
+                 where busy_call.organization_id = calling_stations.organization_id
+                   and busy_call.station_id = calling_stations.id
                    and busy_call.mode = 'agent_cloud' and busy_call.status in ('pending', 'in_progress'))
         or exists (select 1 from ${stationMessageJobs} busy_job
-                    where busy_job.organization_id = ${callingStations.organizationId}
-                      and busy_job.station_id = ${callingStations.id}
+                    where busy_job.organization_id = calling_stations.organization_id
+                      and busy_job.station_id = calling_stations.id
                       and busy_job.status in ('queued', 'claimed'))
         or exists (select 1 from ${callCampaignStepRuns} busy_run
-                    where busy_run.station_id = ${callingStations.id} and busy_run.status = 'started'))`,
+                    where busy_run.station_id = calling_stations.id and busy_run.status = 'started'))`,
       callsToday: sql<number>`(select count(*)::int from ${callSessions} today
-                                where today.organization_id = ${callingStations.organizationId}
-                                  and today.station_id = ${callingStations.id}
+                                where today.organization_id = calling_stations.organization_id
+                                  and today.station_id = calling_stations.id
                                   and today.mode = 'agent_cloud'
                                   and today.created_at >= ${dayStart.toISOString()}::timestamptz)`,
     })
