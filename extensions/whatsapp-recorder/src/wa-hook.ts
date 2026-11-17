@@ -86,6 +86,8 @@ const MIC_SETTLE_MS = 300;
  */
 const WATCH_INTERVAL_MS = 500;
 const NO_TIMER_FALLBACK_MS = 60_000;
+/** The no-timer fallback also needs the call screen without any status this long: an end-of-call screen lasts under 2 s. */
+const NO_STATUS_FOR_FALLBACK_MS = 5_000;
 /**
  * How many checks running the timer, or End call, must be missing before the
  * call counts as over. Background tabs throttle intervals to 1 s, so this is
@@ -188,6 +190,8 @@ type Session = {
   /** When WhatsApp first said "Connecting…" before a pick-up, and how many transport snapshots were logged since. */
   connectingAt: number | null;
   connectingProbes: number;
+  /** Since when the call screen has shown no status (Calling…/Ringing…) at all, for the no-timer fallback. */
+  noStatusSince: number | null;
   /** Running from the moment the call opened the microphone. */
   recording: Recording;
   watch: number;
@@ -552,6 +556,7 @@ function install(): void {
         lastWhere: null,
         connectingAt: null,
         connectingProbes: 0,
+        noStatusSince: null,
         recording,
         watch: 0,
       };
@@ -592,6 +597,8 @@ function install(): void {
     if (!current) return;
     const ui = readCallUi();
     const { timerText, statusText } = ui;
+    if (ui.present && !statusText) current.noStatusSince ??= Date.now();
+    else current.noStatusSince = null;
     if (ui.present) {
       noteCallUi(current.callId);
       current.sawEndButton = true;
@@ -641,13 +648,22 @@ function install(): void {
         // two and a half seconds ago.
         const now = Date.now();
         answer(current, true, Math.max(current.recording.startedAt, now - (timerSeconds ?? 0) * 1000 - 500));
-      } else if (ui.present && Date.now() - current.dialedAt > NO_TIMER_FALLBACK_MS && !STILL_RINGING.test(statusText ?? "")) {
+      } else if (
+        ui.present &&
+        Date.now() - current.dialedAt > NO_TIMER_FALLBACK_MS &&
+        !STILL_RINGING.test(statusText ?? "") &&
+        current.noStatusSince !== null &&
+        Date.now() - current.noStatusSince >= NO_STATUS_FOR_FALLBACK_MS
+      ) {
         // No timer seen in a minute — WhatsApp's markup may have changed, so
         // keep the recording rather than discard the call. Not while WhatsApp
         // itself still says "Calling…"/"Ringing…": that is a long ring. And
         // only while the call screen shows: on the tick it closed (a ring
         // that ran out after 64 s), this took the hang-up for a pick-up, and
-        // the agent greeted an empty line (Shruti, 17 Nov 2026).
+        // the agent greeted an empty line (Shruti, 17 Nov 2026). Nor on the
+        // end-of-call screen of a phone that was off ("Calling…" for 88 s,
+        // then a moment with no status: Sandeep, 17 Nov 2026): an answered
+        // call shows no status for good, so it must be gone for a while.
         answer(current, false, current.recording.startedAt);
       }
       current.lastTimerText = timerText;
