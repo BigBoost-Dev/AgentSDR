@@ -43,6 +43,7 @@ import {
   type HookToAgent,
   type HookToAgentMessaging,
 } from "./wa-protocol";
+import { headerTitle } from "./chatTitle";
 import {
   WA_HEARD_AUDIO_PORT,
   WA_RECORDING_PORT,
@@ -332,6 +333,8 @@ async function dial(
         prepared = true;
         await beforePress();
         chatSeenAt = Date.now();
+        // Saving the lead renamed the header just now: what shows next is the lead's chat.
+        leadTitle = null;
         continue; // the form may have re-rendered the chat; find the button afresh
       }
       pressLikeUser(button);
@@ -670,9 +673,9 @@ function clickChatLink(digits: string, text: string | null): boolean {
 /** The open chat's name as its header shows it — the number, for a non-contact. */
 function chatTitle(): string | null {
   const header = document.querySelector<HTMLElement>("#main header");
-  const first = header?.innerText.split("\n").map((line) => line.trim()).find(Boolean);
-  return first ?? null;
+  return headerTitle(header?.innerText ?? "");
 }
+
 
 /** Puts the follow-up in the message box unless WhatsApp already did; never sends it. */
 async function typeIntoComposer(text: string): Promise<void> {
