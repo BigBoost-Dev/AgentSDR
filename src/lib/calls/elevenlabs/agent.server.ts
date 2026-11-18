@@ -212,6 +212,48 @@ async function conversation(system: string, firstMessage: string, mode: ElevenLa
   return { signedUrl, override: { agent: { prompt: { prompt: system }, first_message: firstMessage, language: "en" }, tts: { voice_id: voice } } };
 }
 
+const warmed = new Map<string, number>();
+const WARM_FOR_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Gets a voice ready for the realtime agent before its first call. The first
+ * time the realtime mode speaks with a voice, ElevenLabs answers in a default
+ * voice (about 170 Hz, heard as a man) and prepares the chosen one; minutes
+ * later the voice is right (Neha and Raju: 170 Hz on first use, 242 Hz and
+ * 140 Hz ten minutes later — 18 Nov 2026). So a campaign that picks a voice
+ * speaks with it once, right away, in a throwaway conversation. Never throws.
+ */
+export async function warmElevenLabsVoice(voiceId: string | null): Promise<void> {
+  const voice = voiceId?.trim() || DEFAULT_ELEVENLABS_VOICE;
+  const key = `${currentOrganizationId()}|${voice}`;
+  if (Date.now() - (warmed.get(key) ?? 0) < WARM_FOR_MS) return;
+  try {
+    const session = await conversation("Say the line you are given, and nothing else.", "Hello, this is a quick voice check.", "realtime", voice);
+    await new Promise<void>((resolve) => {
+      const socket = new WebSocket(session.signedUrl);
+      const done = () => {
+        clearTimeout(timer);
+        try {
+          socket.close();
+        } catch {}
+        resolve();
+      };
+      const timer = setTimeout(done, 15_000);
+      socket.onopen = () => socket.send(JSON.stringify({ type: "conversation_initiation_client_data", conversation_config_override: session.override }));
+      socket.onmessage = (event) => {
+        const message = JSON.parse(String(event.data)) as { type?: string; ping_event?: { event_id: number } };
+        if (message.type === "ping" && message.ping_event) socket.send(JSON.stringify({ type: "pong", event_id: message.ping_event.event_id }));
+        if (message.type === "agent_response") setTimeout(done, 3_000);
+      };
+      socket.onerror = done;
+      socket.onclose = done;
+    });
+    warmed.set(key, Date.now());
+  } catch (error) {
+    console.warn("[elevenlabs] could not warm voice", voice, error instanceof Error ? error.message : error);
+  }
+}
+
 /** Who talks on a call: its AI campaign's voice engine (Gemini when it has none, e.g. a call placed by hand). */
 export async function callVoiceEngine(campaignContactId: string | null): Promise<{ engine: "gemini" | "elevenlabs"; voice: string | null }> {
   if (!campaignContactId) return { engine: "gemini", voice: null };

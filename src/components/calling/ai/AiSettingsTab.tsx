@@ -276,7 +276,9 @@ export function AiSettingsTab({
                   const preview = elevenVoices?.find((voice) => voice.id === draft.elevenlabsVoice)?.previewUrl;
                   return preview ? <audio key={preview} controls preload="none" src={preview} className="mt-2 h-9 w-full" aria-label="Voice preview" /> : null;
                 })()}
-                <p className="mt-1 text-paragraph-xs text-text-sub-600">ElevenLabs answers in English only. Try it on the Compare voices tab.</p>
+                <p className="mt-1 text-paragraph-xs text-text-sub-600">
+                  ElevenLabs answers in English only. A voice used for the first time takes a few minutes to get ready (until then ElevenLabs speaks in a default voice); AgentSDR starts that when you save, so wait about ten minutes before a test call.
+                </p>
               </div>
             )}
           </div>

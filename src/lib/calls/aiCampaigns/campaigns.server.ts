@@ -28,6 +28,7 @@ import { AGENT_OUTCOMES, TERMINAL_CALL_STATUSES, type AgentOutcomeKind, type Cal
 import { CallApiError, expireStaleCalls, startCall } from "@/lib/calls/sessions";
 import { isPersonDoNotContact } from "@/lib/crm/policies";
 import { agentBrief } from "./brief.server";
+import { warmElevenLabsVoice } from "@/lib/calls/elevenlabs/agent.server";
 import { callCampaignContacts, callCampaignStations, callCampaignStepRuns, callCampaigns, callSessions, callingStations } from "@/lib/calls/schema";
 import {
   AI_CONTACT_STATUSES,
@@ -469,6 +470,10 @@ export async function updateAiCampaign(campaignId: string, input: UpdateAiCampai
     .where(and(inOrg(callCampaigns), eq(callCampaigns.id, campaignId), eq(callCampaigns.runBy, "ai")))
     .returning();
   if (!updated) throw new CallApiError(404, "Campaign not found");
+  // A voice newly picked for ElevenLabs is spoken with once now, so its first call is not in the default voice.
+  if (updated.aiVoiceEngine === "elevenlabs" && (input.voiceEngine !== undefined || input.elevenlabsVoice !== undefined)) {
+    void warmElevenLabsVoice(updated.aiElevenlabsVoice);
+  }
   return toDetail(updated);
 }
 
