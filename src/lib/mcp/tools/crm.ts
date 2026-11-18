@@ -20,7 +20,9 @@ import {
   createManualDraft,
   moveRecordStage,
   reopenCrmRecord,
+  scheduleFollowUpOn,
 } from "@/lib/crm/operations";
+import { followUpDateError, MAX_FOLLOW_UP_DAYS } from "@/lib/crm/followUpDate";
 import { clearPersonDoNotContact, setPersonDoNotContact } from "@/lib/crm/policies";
 import { countCrmActionGroups, getCrmRecordWorkspace, listCrmActions } from "@/lib/crm/queries";
 import { crmDrafts, crmRecords, crmSequenceSteps } from "@/lib/crm/schema";
@@ -258,6 +260,7 @@ export const CRM_TOOL_SCOPES = {
   crm_review_classification: "crm:write",
   crm_move_stage: "crm:write",
   crm_snooze: "crm:write",
+  crm_schedule_follow_up: "crm:write",
   crm_close_record: "crm:write",
   crm_set_do_not_contact: "crm:write",
 } as const satisfies Record<string, ApiScope>;
@@ -962,12 +965,36 @@ function registerAllCrmTools(server: McpServer) {
       }),
   );
 
+  tools["crm_schedule_follow_up"] = server.registerTool(
+    "crm_schedule_follow_up",
+    {
+      title: "Follow up on a date",
+      description:
+        "For a lead who asked to be contacted later (\"get back to me in 45 days\"). Sends nothing now, stops the record's automated follow-ups and discards its open drafts, takes it off the Action required queue, and returns it there on that date as a due follow-up. A new reply from them before then brings it back as usual. Unlike crm_snooze it works without an active sequence and drops the remaining steps. Give `until` (ISO 8601) or `days` (max 730). Not for closed records or Do Not Contact people.",
+      inputSchema: z.object({
+        recordId: uuid("recordId"),
+        until: z.string().datetime({ offset: true }).optional(),
+        days: z.number().min(0.01).max(MAX_FOLLOW_UP_DAYS).optional(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (input, ctx) =>
+      run(ctx, "crm:write", async (caller) => {
+        const at = input.until ? new Date(input.until) : input.days ? new Date(Date.now() + input.days * 86_400_000) : null;
+        if (!at) throw new CrmToolError("Give `until` or `days`.");
+        const problem = followUpDateError(at);
+        if (problem) throw new CrmToolError(problem);
+        await scheduleFollowUpOn({ recordId: input.recordId, at, actorRef: caller.actorRef });
+        return { recordId: input.recordId, followUpAt: at.toISOString() };
+      }),
+  );
+
   tools["crm_close_record"] = server.registerTool(
     "crm_close_record",
     {
-      title: "Close or reopen record",
+      title: "Discard (close) or reopen record",
       description:
-        "`close` takes a record off the queue and stops its sequence (e.g. not a fit, duplicate, handled elsewhere) — it reopens by itself if they write again. `reopen` puts a closed record back. To stop ALL contact with the person on every channel, use crm_set_do_not_contact.",
+        "`close` is the app's \"Discard lead\": it takes a record off the queue and stops its sequence (e.g. not a fit, duplicate, handled elsewhere) — it reopens by itself if they write again. `reopen` puts a closed record back. To stop ALL contact with the person on every channel, use crm_set_do_not_contact.",
       inputSchema: z.object({
         recordId: uuid("recordId"),
         action: z.enum(["close", "reopen"]),

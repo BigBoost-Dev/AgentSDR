@@ -9,6 +9,7 @@ import {
   RiChat3Line,
   RiCheckLine,
   RiCheckboxCircleLine,
+  RiCalendarScheduleLine,
   RiCloseCircleLine,
   RiErrorWarningLine,
   RiHistoryLine,
@@ -53,7 +54,7 @@ import {
 } from "./CrmLayout";
 import { RecordBody } from "./CrmSkeletons";
 import { asList, asObject, crmFetch, displayName, errorMessage, formatDate, relativeDate } from "./crm-utils";
-import { ClassificationPicker, formatMeetingRange, MeetingOutcomeButtons, MoveStageDialog, moveStageSuccessMessage, RegenerateDraftDialog, humanize } from "./ActionRowTools";
+import { ClassificationPicker, formatMeetingRange, MeetingOutcomeButtons, FollowUpDialog, followUpSuccessMessage, MoveStageDialog, moveStageSuccessMessage, RegenerateDraftDialog, humanize } from "./ActionRowTools";
 import { ContactAvatar } from "./ContactAvatar";
 import { takeRecordWorkspace } from "./recordPrefetch";
 import { announceRecordChanged } from "./recordEvents";
@@ -101,6 +102,7 @@ const eventLabels: Record<string, string> = {
   "sequence.step_channel_switched": "Follow-up moved to their other channel",
   "sequence.step_channel_fallback": "Follow-up kept on the same channel",
   "record.closed": "Record closed",
+  "record.follow_up_scheduled": "Follow-up scheduled",
   "record.reopened": "Record reopened",
   "stage.moved": "Stage moved",
 };
@@ -394,6 +396,7 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
   moveStage: React.ReactNode;
 }) {
   const id = String(data.id);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
   const personId = String(person.id ?? data.personId);
   const dnc = Boolean(data.dnc);
   const workflowState = String(data.workflowState ?? "");
@@ -439,6 +442,7 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
           onClick={() => void onAction(`/records/${id}/skip`, {}, "POST", "Step skipped — the next one is scheduled")}
         aria-label="Skip step"><Button.Icon as={RiSkipForwardLine} /><span className="hidden sm:inline">Skip step</span></Button.Root>}
         {moveStage}
+        <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={async (at) => { await onAction(`/records/${id}/follow-up`, { at: at.toISOString() }, "POST", followUpSuccessMessage(at)); return true; }} />
         <Dropdown.Root>
           <Dropdown.Trigger asChild>
             <Button.Root variant="neutral" mode="stroke" size="xsmall" title="Manage record" aria-label="Manage record"><Button.Icon as={RiMoreLine} /></Button.Root>
@@ -453,13 +457,16 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
               <Dropdown.Item onSelect={() => void onAction(`/records/${id}/snooze`, { until: new Date(Date.now() + 86_400_000).toISOString() }, "POST", "Next action snoozed for one day")}>
                 <Dropdown.ItemIcon as={RiTimerLine} />Snooze a day
               </Dropdown.Item>
+              <Dropdown.Item onSelect={() => setFollowUpOpen(true)}>
+                <Dropdown.ItemIcon as={RiCalendarScheduleLine} />Follow up later…
+              </Dropdown.Item>
               <Dropdown.Separator />
             </>}
             <Dropdown.Item onSelect={() => void onAction(`/people/${personId}/dnc`, { enabled: !dnc }, "POST", dnc ? "Do not contact removed" : "Contact marked as do not contact")}>
               <Dropdown.ItemIcon as={RiUserLine} />{dnc ? "Clear do not contact" : "Mark do not contact"}
             </Dropdown.Item>
-            <Dropdown.Item destructive={!closed} onSelect={() => void onAction(`/records/${id}/${closed ? "reopen" : "close"}`, closed ? {} : { reason: "Closed by operator" }, "POST", closed ? "Record reopened" : "Record closed")}>
-              <Dropdown.ItemIcon as={closed ? RiPlayLine : RiCloseCircleLine} />{closed ? "Reopen record" : "Close record"}
+            <Dropdown.Item destructive={!closed} onSelect={() => void onAction(`/records/${id}/${closed ? "reopen" : "close"}`, closed ? {} : { reason: "Discarded by operator" }, "POST", closed ? "Record reopened" : "Lead discarded — it comes back if they reply")}>
+              <Dropdown.ItemIcon as={closed ? RiPlayLine : RiCloseCircleLine} />{closed ? "Reopen record" : "Discard lead"}
             </Dropdown.Item>
           </Dropdown.Content>
         </Dropdown.Root>

@@ -4,7 +4,7 @@ description: "Connect Claude, Claude Code or any MCP client to AgentSDR and work
 icon: "robot"
 ---
 
-AgentSDR is an [MCP](https://modelcontextprotocol.io) server. Connect an AI assistant (Claude on the web or desktop, Claude Code, Cursor, or any client that supports remote MCP servers) and it can do what a rep does in the **CRM**: read the Action required queue, find any lead by stage, name or company, open a lead with its whole conversation, read the team's writing instructions and Knowledge, review and send the AI's drafts or write its own, confirm or correct how a reply was classified, move stages, snooze, close and mark people Do Not Contact.
+AgentSDR is an [MCP](https://modelcontextprotocol.io) server. Connect an AI assistant (Claude on the web or desktop, Claude Code, Cursor, or any client that supports remote MCP servers) and it can do what a rep does in the **CRM**: read the Action required queue, find any lead by stage, name or company, open a lead with its whole conversation, read the team's writing instructions and Knowledge, review and send the AI's drafts or write its own, confirm or correct how a reply was classified, move stages, snooze, schedule a follow-up for a date, discard (close) and mark people Do Not Contact.
 
 Nobody needs database access or the API for this. Each person signs in with their own AgentSDR account, and everything the assistant does is recorded in the CRM timeline as *"&lt;their name&gt; via AI assistant"*.
 
@@ -63,7 +63,7 @@ Every connection carries scopes, and the assistant only sees the tools those all
 | Scope | Lets the assistant | Tools |
 |---|---|---|
 | `crm:read` (always) | See the queue and every lead record (conversations, details, calls), and the team's writing instructions and Knowledge | `crm_list_records`, `crm_get_record`, `crm_get_call`, `crm_list_stages`, `crm_get_writing_guide`, `crm_get_knowledge` |
-| `crm:write` | Edit and rewrite drafts, write new ones, confirm or correct classifications, move stages, snooze, close or reopen, set Do Not Contact | `crm_update_draft`, `crm_regenerate_draft`, `crm_write_draft`, `crm_discard_draft`, `crm_review_classification`, `crm_move_stage`, `crm_snooze`, `crm_close_record`, `crm_set_do_not_contact` |
+| `crm:write` | Edit and rewrite drafts, write new ones, confirm or correct classifications, move stages, snooze, schedule a follow-up for a date, discard (close) or reopen, set Do Not Contact | `crm_update_draft`, `crm_regenerate_draft`, `crm_write_draft`, `crm_discard_draft`, `crm_review_classification`, `crm_move_stage`, `crm_snooze`, `crm_schedule_follow_up`, `crm_close_record`, `crm_set_do_not_contact` |
 | `crm:send` | Send messages to leads by email, LinkedIn or WhatsApp | `crm_send_draft` |
 
 When you connect, the consent screen lists what the app asked for. Untick **Work the CRM** or **Send messages** to give it less. For example, a read-only assistant can summarise and draft in the chat but cannot change or send anything. API keys get the same choice when they are created.

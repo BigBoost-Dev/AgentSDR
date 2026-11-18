@@ -6,6 +6,7 @@ import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   RiArrowDownSLine,
   RiArrowRightLine,
+  RiCalendarScheduleLine,
   RiCheckLine,
   RiDeleteBinLine,
   RiErrorWarningLine,
@@ -20,6 +21,7 @@ import * as Modal from "@/components/alignui/modal";
 import * as Select from "@/components/alignui/select";
 import { cn } from "@/utils/cn";
 import { dangerButtonClass, fieldClass, primaryButtonClass, secondaryButtonClass, subtleButtonClass } from "./CrmLayout";
+import { daysBetween, followUpDateError, followUpDueIn, followUpDueOn, FOLLOW_UP_PRESETS, MAX_FOLLOW_UP_DAYS, toDateInputValue } from "@/lib/crm/followUpDate";
 import { asList, asObject, CATEGORY_COLOR, categoryColor, formatDate } from "./crm-utils";
 
 type Data = Record<string, unknown>;
@@ -393,6 +395,84 @@ export function RegenerateDraftDialog({ open, onOpenChange, onSubmit, busy }: {
     </Modal.Root>
     </div>
   );
+}
+
+/**
+ * "Follow up later": the lead asked to be contacted on a date. Nothing goes
+ * out until then, automated follow-ups stop, and the lead returns to Action
+ * required that day. The due time is 9:00 on the chosen day in the browser's
+ * local time (there is no client-side organization time-zone helper).
+ */
+export function FollowUpDialog({ open, onOpenChange, onSubmit }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Resolves true when the follow-up was set; the dialog closes itself then. */
+  onSubmit: (at: Date) => Promise<boolean>;
+}) {
+  const [at, setAt] = useState<Date>(() => followUpDueIn(7));
+  const [working, setWorking] = useState(false);
+  // The days box keeps its own text, so it can be emptied while typing "45"
+  // instead of snapping back to the old number.
+  const [daysText, setDaysText] = useState("7");
+  useEffect(() => { if (open) { setAt(followUpDueIn(7)); setDaysText("7"); setWorking(false); } }, [open]);
+  const error = followUpDateError(at);
+  const days = daysBetween(at);
+  const pick = (due: Date) => { setAt(due); setDaysText(String(daysBetween(due))); };
+  const setDays = (value: string) => {
+    setDaysText(value);
+    const n = Number(value);
+    if (value.trim() && Number.isInteger(n) && n > 0) setAt(followUpDueIn(n));
+  };
+  const submit = async () => {
+    if (error || working) return;
+    setWorking(true);
+    const ok = await onSubmit(at);
+    setWorking(false);
+    if (ok) onOpenChange(false);
+  };
+  return (
+    // Portaled, but React still bubbles clicks into a table row: swallow them.
+    <div className="contents" onClick={(event) => event.stopPropagation()}>
+    <Modal.Root open={open} onOpenChange={(next) => { if (!working) onOpenChange(next); }}>
+      <Modal.Content size="max-w-md">
+        <Modal.Header icon={RiCalendarScheduleLine}>
+          <Modal.Title>Follow up later</Modal.Title>
+          <Modal.Description>Nothing is sent until then and automated follow-ups stop. The lead comes back to Action required that day. If they write first, it comes back sooner.</Modal.Description>
+        </Modal.Header>
+        <Modal.Body className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {FOLLOW_UP_PRESETS.map((preset) => (
+              <button key={preset.label} type="button" disabled={working} onClick={() => pick(followUpDueIn(preset.days))} className={cn("rounded-full px-2.5 py-1 text-label-xs ring-1 ring-inset transition disabled:opacity-60", days === preset.days ? "bg-bg-soft-200 text-text-strong-950 ring-stroke-sub-300" : "bg-bg-weak-50 text-text-sub-600 ring-stroke-soft-200 hover:bg-bg-soft-200 hover:text-text-strong-950")}>{preset.label}</button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <span className="text-label-xs text-text-sub-600">In N days</span>
+              <input type="number" min={1} max={MAX_FOLLOW_UP_DAYS} step={1} inputMode="numeric" value={daysText} disabled={working} onChange={(event) => setDays(event.target.value)} className={fieldClass} />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-label-xs text-text-sub-600">On this date</span>
+              <input type="date" value={toDateInputValue(at)} min={toDateInputValue(followUpDueIn(1))} disabled={working} onChange={(event) => { const due = followUpDueOn(event.target.value); if (due) pick(due); }} className={fieldClass} />
+            </label>
+          </div>
+          <p className={cn("text-paragraph-sm", error ? "text-error-base" : "text-text-sub-600")}>
+            {error ?? `Back in Action required on ${new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" }).format(at)}.`}
+          </p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Modal.Close asChild><button type="button" className={secondaryButtonClass} disabled={working}>Cancel</button></Modal.Close>
+          <button type="button" className={primaryButtonClass} disabled={Boolean(error) || working} onClick={() => void submit()}>
+            <RiCalendarScheduleLine className="size-4" aria-hidden="true" />{working ? "Saving…" : "Set follow-up"}
+          </button>
+        </Modal.Footer>
+      </Modal.Content>
+    </Modal.Root>
+    </div>
+  );
+}
+
+export function followUpSuccessMessage(at: Date): string {
+  return `Follow-up set for ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(at)}. Nothing goes out until then.`;
 }
 
 export type MoveStageBody = {

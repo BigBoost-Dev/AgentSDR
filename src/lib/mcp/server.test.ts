@@ -54,6 +54,7 @@ describe("AgentSDR MCP server", () => {
       "crm_move_stage",
       "crm_regenerate_draft",
       "crm_review_classification",
+      "crm_schedule_follow_up",
       "crm_send_draft",
       "crm_set_do_not_contact",
       "crm_snooze",

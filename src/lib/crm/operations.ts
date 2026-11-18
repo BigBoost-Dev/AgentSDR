@@ -1,5 +1,7 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { isPersonDoNotContact } from "./policies";
+import { followUpDateError } from "./followUpDate";
+import { assertWorkflowTransition } from "./stateMachine";
 import { appendCrmEvent } from "./events";
 import {
   acknowledgeClassificationInTransaction,
@@ -357,6 +359,59 @@ export async function closeCrmRecord(input: {
       reason: "human_close",
       closedReason: input.reason,
     });
+  });
+}
+
+/**
+ * "Follow up on a date": the lead said "contact me in 45 days". Nothing goes
+ * out now, the sequence stops, and the record leaves the queue ('waiting' with
+ * a future next_action_at) until that day, when it returns to Action required
+ * as a "Due follow-up". A new reply from them before then is handled as usual
+ * (inbound ingest reclassifies and reopens the record).
+ */
+export async function scheduleFollowUpOn(input: {
+  recordId: string;
+  at: Date;
+  actorRef?: string | null;
+}) {
+  const dateError = followUpDateError(input.at);
+  if (dateError) throw new CrmConflictError(dateError);
+  return withCrmTransaction(async (tx) => {
+    const record = await lockCrmRecord(tx, input.recordId);
+    if (record.workflowState === "closed") throw new CrmConflictError("Reopen the lead first");
+    if (await isPersonDoNotContact(tx, record.personId)) throw new CrmConflictError("This Person is globally marked Do Not Contact");
+    const [uncertain] = await tx.select({ id: crmDrafts.id }).from(crmDrafts)
+      .where(and(eq(crmDrafts.crmRecordId, record.id), eq(crmDrafts.status, "delivery_uncertain"))).limit(1);
+    if (uncertain) throw new CrmConflictError("A send needs reconciling first");
+    assertWorkflowTransition(record.workflowState, "waiting");
+    await interruptActiveSequenceRunInTransaction(tx, {
+      recordId: record.id,
+      reason: "follow_up_scheduled",
+      contextVersion: record.contextVersion,
+    });
+    const now = new Date();
+    await tx.update(crmSequenceRuns).set({ status: "cancelled", updatedAt: now })
+      .where(and(eq(crmSequenceRuns.crmRecordId, record.id), eq(crmSequenceRuns.status, "interrupted")));
+    // Nothing may go out before the date, auto-send included. (The version
+    // bump below already makes any of them stale; discarding is explicit.)
+    await tx.update(crmDrafts).set({ status: "discarded", autoSendAt: null, updatedAt: now })
+      .where(and(eq(crmDrafts.crmRecordId, record.id), inArray(crmDrafts.status, ["generating", "awaiting_review", "failed"])));
+    const nextContextVersion = record.contextVersion + 1;
+    const [updated] = await tx.update(crmRecords)
+      .set({ workflowState: "waiting", nextActionAt: input.at, contextVersion: nextContextVersion, updatedAt: now })
+      .where(eq(crmRecords.id, record.id)).returning();
+    await appendCrmEvent(tx, {
+      personId: record.personId,
+      crmRecordId: record.id,
+      pipelineId: record.pipelineId,
+      eventType: "record.follow_up_scheduled",
+      actorType: "authenticated_operator",
+      actorRef: input.actorRef,
+      fromData: { workflowState: record.workflowState, nextActionAt: record.nextActionAt },
+      toData: { dueAt: input.at.toISOString() },
+      contextVersion: nextContextVersion,
+    });
+    return updated!;
   });
 }
 

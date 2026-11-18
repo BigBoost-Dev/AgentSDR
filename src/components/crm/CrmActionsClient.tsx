@@ -9,6 +9,7 @@ import {
   RiArchiveStackFill,
   RiArrowRightLine,
   RiCalendarScheduleLine,
+  RiCloseCircleLine,
   RiCheckboxCircleFill,
   RiCheckDoubleLine,
   RiCheckLine,
@@ -56,7 +57,7 @@ import { cn } from "@/utils/cn";
 import { ContactAvatar } from "./ContactAvatar";
 import { ErrorState, primaryButtonClass, secondaryButtonClass } from "./CrmLayout";
 import { RowsSkeleton } from "./CrmSkeletons";
-import { CategoryDot, ClassificationPicker, HoverPreview, HoverPreviewProvider, InlineDraftEditor, MeetingOutcomeTools, MoveStageDialog, moveStageSuccessMessage, RegenerateDraftDialog, humanize, type MoveStageBody, type RowMutation } from "./ActionRowTools";
+import { CategoryDot, ClassificationPicker, HoverPreview, HoverPreviewProvider, FollowUpDialog, followUpSuccessMessage, InlineDraftEditor, MeetingOutcomeTools, MoveStageDialog, moveStageSuccessMessage, RegenerateDraftDialog, humanize, type MoveStageBody, type RowMutation } from "./ActionRowTools";
 import { asList, asObject, CATEGORY_LABELS, crmFetch, displayName, errorMessage, formatDate, relativeDate, timeAgo } from "./crm-utils";
 import { prefetchRecordWorkspace } from "./recordPrefetch";
 import { useRecordChanged } from "./recordEvents";
@@ -981,7 +982,9 @@ export function RowMenu({ href, draft, hasRun, recordId, categories, categoryKey
   const tomorrow = () => new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [moveStageOpen, setMoveStageOpen] = useState(false);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
   return <>
+    <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={(at) => onMutate(`/records/${recordId}/follow-up`, { at: at.toISOString() }, "POST", followUpSuccessMessage(at))} />
     {draft && <RegenerateDraftDialog open={regenerateOpen} onOpenChange={setRegenerateOpen} onSubmit={(feedback) => onMutate(`/drafts/${String(draft.id)}/regenerate`, { feedback }, "POST", "Draft rewritten with your notes")} />}
     <MoveStageDialog open={moveStageOpen} onOpenChange={setMoveStageOpen} categories={categories} categoryKey={categoryKey} subcategoryId={subcategoryId} contextVersion={contextVersion} onMove={onMoveStage} />
     <Dropdown.Root>
@@ -991,12 +994,15 @@ export function RowMenu({ href, draft, hasRun, recordId, categories, categoryKey
       <Dropdown.Content align="end">
         <Dropdown.Item asChild><Link href={href}><Dropdown.ItemIcon as={RiExternalLinkLine} />Open record</Link></Dropdown.Item>
         <Dropdown.Item onSelect={() => setMoveStageOpen(true)}><Dropdown.ItemIcon as={RiArrowRightLine} />Move stage…</Dropdown.Item>
+        <Dropdown.Item onSelect={() => setFollowUpOpen(true)}><Dropdown.ItemIcon as={RiCalendarScheduleLine} />Follow up later…</Dropdown.Item>
         {hasRun && <Dropdown.Item onSelect={() => void onMutate(`/records/${recordId}/snooze`, { until: tomorrow() }, "POST", "Snoozed for a day")}><Dropdown.ItemIcon as={RiTimerLine} />Snooze a day</Dropdown.Item>}
         {draft && <>
           <Dropdown.Separator />
           <Dropdown.Item onSelect={() => setRegenerateOpen(true)}><Dropdown.ItemIcon as={RiRefreshLine} />Regenerate draft…</Dropdown.Item>
           <Dropdown.Item destructive onSelect={() => void onMutate(`/drafts/${String(draft.id)}/discard`, {}, "POST", "Draft discarded")}><Dropdown.ItemIcon as={RiDeleteBinLine} />Discard draft</Dropdown.Item>
         </>}
+        <Dropdown.Separator />
+        <Dropdown.Item destructive onSelect={() => void onMutate(`/records/${recordId}/close`, { reason: "Discarded by operator" }, "POST", "Lead discarded — it comes back if they reply")}><Dropdown.ItemIcon as={RiCloseCircleLine} />Discard lead</Dropdown.Item>
       </Dropdown.Content>
     </Dropdown.Root>
   </>;
