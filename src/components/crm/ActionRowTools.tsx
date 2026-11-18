@@ -21,6 +21,7 @@ import * as Modal from "@/components/alignui/modal";
 import * as Select from "@/components/alignui/select";
 import { cn } from "@/utils/cn";
 import { dangerButtonClass, fieldClass, primaryButtonClass, secondaryButtonClass, subtleButtonClass } from "./CrmLayout";
+import { defaultStageChangeNext, STAGE_CHANGE_NOTE_MAX, type StageChangeNext } from "@/lib/crm/stageChange";
 import { followUpNoteError, FOLLOW_UP_NOTE_MAX } from "@/lib/crm/followUpNote";
 import { daysBetween, followUpDateError, followUpDueIn, followUpDueOn, FOLLOW_UP_PRESETS, MAX_FOLLOW_UP_DAYS, toDateInputValue } from "@/lib/crm/followUpDate";
 import { asList, asObject, CATEGORY_COLOR, categoryColor, formatDate } from "./crm-utils";
@@ -33,6 +34,9 @@ export function humanize(value: unknown): string {
 }
 
 export type ClassificationChoice = { categoryKey: string; subcategoryId: string | null };
+
+/** What the confirm step adds to a pick: what happens next, and what happened. */
+export type StageChangeExtra = { next: StageChangeNext; note: string | null };
 
 /**
  * Badge colours per category, the CRM identity colours Analytics uses:
@@ -62,12 +66,18 @@ export function CategoryDot({ categoryKey, className }: { categoryKey: string | 
  * still scans by outcome. The sequence and next draft follow whatever is
  * picked here, which is why it is worth having on the row at all.
  */
-export function ClassificationPicker({ categories, categoryKey, subcategoryId, subcategoryName, onChange, compact, quiet, disabled, className, title }: {
+export function ClassificationPicker({ categories, categoryKey, subcategoryId, subcategoryName, onChange, confirm, compact, quiet, disabled, className, title }: {
   categories: Data[];
   categoryKey: string | null;
   subcategoryId: string | null;
   subcategoryName?: string | null;
-  onChange: (choice: ClassificationChoice) => void;
+  onChange: (choice: ClassificationChoice, extra?: StageChangeExtra) => void | Promise<unknown>;
+  /**
+   * Opt in to the "What next?" confirm step: picking a stage opens it instead
+   * of applying at once, and `onChange` then gets the rep's choice as `extra`.
+   * `inboundAnswered` sets the default (the reply was already answered).
+   */
+  confirm?: { inboundAnswered: boolean };
   compact?: boolean;
   /**
    * With `compact`: unclassified gets a dashed outline instead of the grey
@@ -89,8 +99,21 @@ export function ClassificationPicker({ categories, categoryKey, subcategoryId, s
         subcategoryId: next,
       };
     if (chosen.categoryKey === categoryKey && (chosen.subcategoryId ?? "") === (subcategoryId ?? "")) return;
-    onChange(chosen);
+    if (confirm) setPending(chosen);
+    else void onChange(chosen);
   };
+  const [pending, setPending] = useState<ClassificationChoice | null>(null);
+  const pendingLabel = pending
+    ? pending.subcategoryId
+      ? String(categories.flatMap((item) => asList<Data>(item.subcategories)).find((item) => String(item.id) === pending.subcategoryId)?.name ?? humanize(pending.categoryKey))
+      : humanize(pending.categoryKey)
+    : "";
+  const confirmDialog = confirm && <StageChangeConfirm
+    stage={pending ? pendingLabel : null}
+    inboundAnswered={confirm.inboundAnswered}
+    onCancel={() => setPending(null)}
+    onApply={async (extra) => { const choice = pending; setPending(null); if (choice) await onChange(choice, extra); }}
+  />;
   const groups = categories.map((category) => ({
     key: String(category.key),
     subcategories: asList<Data>(category.subcategories).filter((item) => item.active !== false),
@@ -99,6 +122,8 @@ export function ClassificationPicker({ categories, categoryKey, subcategoryId, s
 
   if (!compact) {
     return (
+      <>
+      {confirmDialog}
       <Select.Root
         size="xsmall"
         value={value}
@@ -119,6 +144,7 @@ export function ClassificationPicker({ categories, categoryKey, subcategoryId, s
           ))}
         </Select.Content>
       </Select.Root>
+      </>
     );
   }
 
@@ -127,6 +153,8 @@ export function ClassificationPicker({ categories, categoryKey, subcategoryId, s
     ? "bg-bg-white-0 text-text-sub-600 ring-0 outline-dashed outline-1 -outline-offset-1 outline-stroke-sub-300 hover:bg-bg-weak-50"
     : categoryToneClass[categoryKey ?? ""] ?? "bg-bg-weak-50 text-text-sub-600 ring-stroke-soft-200";
   return (
+    <>
+    {confirmDialog}
     <Dropdown.Root>
       <Dropdown.Trigger asChild>
         <button
@@ -142,6 +170,72 @@ export function ClassificationPicker({ categories, categoryKey, subcategoryId, s
       </Dropdown.Trigger>
       <ClassificationMenu groups={groups} value={value} onPick={save} />
     </Dropdown.Root>
+    </>
+  );
+}
+
+/**
+ * The confirm step after a stage is picked: what should happen next, and
+ * what happened (the AI uses the note in drafts). Cancel leaves the stage
+ * as it was.
+ */
+function StageChangeConfirm({ stage, inboundAnswered, onCancel, onApply }: {
+  /** The picked stage's name; null while closed. */
+  stage: string | null;
+  inboundAnswered: boolean;
+  onCancel: () => void;
+  onApply: (extra: StageChangeExtra) => Promise<void>;
+}) {
+  const open = stage !== null;
+  const [next, setNext] = useState<StageChangeNext>(defaultStageChangeNext(inboundAnswered));
+  const [note, setNote] = useState("");
+  const [working, setWorking] = useState(false);
+  useEffect(() => { if (open) { setNext(defaultStageChangeNext(inboundAnswered)); setNote(""); setWorking(false); } }, [open, inboundAnswered]);
+  const choices: { value: StageChangeNext; label: string; detail: string; icon: typeof RiSparklingLine }[] = [
+    { value: "reply", label: "Draft a reply now", detail: "Writes this stage's reply for you to send.", icon: RiSparklingLine },
+    { value: "follow_up", label: "Just schedule follow-ups", detail: "No reply now; this stage's follow-ups start.", icon: RiTimerLine },
+  ];
+  const tooLong = note.length > STAGE_CHANGE_NOTE_MAX;
+  const apply = async () => {
+    if (working || tooLong) return;
+    setWorking(true);
+    try { await onApply({ next, note: note.trim() || null }); } finally { setWorking(false); }
+  };
+  return (
+    <div className="contents" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <Modal.Root open={open} onOpenChange={(value) => { if (!value && !working) onCancel(); }}>
+        <Modal.Content size="max-w-md">
+          <Modal.Header icon={RiArrowRightLine}>
+            <Modal.Title>Move to {stage}</Modal.Title>
+            <Modal.Description>What should happen next?</Modal.Description>
+          </Modal.Header>
+          <Modal.Body className="space-y-3">
+            <div role="radiogroup" aria-label="What next?" className="grid gap-2">
+              {choices.map((choice) => {
+                const selected = next === choice.value;
+                return (
+                  <button key={choice.value} type="button" role="radio" aria-checked={selected} disabled={working} onClick={() => setNext(choice.value)} className={cn("flex items-start gap-2.5 rounded-lg p-3 text-left ring-1 ring-inset transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stroke-strong-950 disabled:opacity-60", selected ? "bg-bg-soft-200 ring-stroke-sub-300" : "bg-bg-white-0 ring-stroke-soft-200 hover:bg-bg-weak-50")}>
+                    <choice.icon className="mt-0.5 size-4 shrink-0 text-text-sub-600" aria-hidden="true" />
+                    <span className="min-w-0 flex-1"><span className="block text-label-sm text-text-strong-950">{choice.label}</span><span className="block text-paragraph-xs text-text-sub-600">{choice.detail}</span></span>
+                    {selected && <RiCheckLine className="size-4 shrink-0 text-primary-base" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+            <label className="block space-y-1">
+              <span className="text-label-xs text-text-sub-600">What happened? (optional, the AI uses it in drafts)</span>
+              <textarea value={note} maxLength={STAGE_CHANGE_NOTE_MAX} disabled={working} onChange={(event) => setNote(event.target.value)} placeholder="e.g. They want pricing for 50 seats; loop in their CTO" className={cn(fieldClass, "min-h-20 resize-y leading-6")} />
+            </label>
+          </Modal.Body>
+          <Modal.Footer>
+            <button type="button" className={secondaryButtonClass} disabled={working} onClick={onCancel}>Cancel</button>
+            <button type="button" className={primaryButtonClass} disabled={working || tooLong} onClick={() => void apply()}>
+              <RiCheckLine className="size-4" aria-hidden="true" />{working ? "Applying…" : "Apply"}
+            </button>
+          </Modal.Footer>
+        </Modal.Content>
+      </Modal.Root>
+    </div>
   );
 }
 
@@ -481,163 +575,6 @@ export function FollowUpDialog({ open, onOpenChange, onSubmit }: {
 
 export function followUpSuccessMessage(at: Date): string {
   return `Follow-up set for ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(at)}. Nothing goes out until then.`;
-}
-
-export type MoveStageBody = {
-  categoryKey: string;
-  subcategoryId: string | null;
-  expectedContextVersion: number;
-  occurredAt: string | null;
-  note: string | null;
-  /** "follow_up": the immediate reply is already handled, schedule the follow-ups. "reply": draft it now. */
-  next: "follow_up" | "reply";
-};
-
-/** The toast for a finished move, which differs by what happens next. */
-export function moveStageSuccessMessage(body: MoveStageBody): string {
-  return body.next === "reply"
-    ? "Stage moved — the first reply is being drafted"
-    : "Stage moved — follow-ups scheduled";
-}
-
-/** yyyy-mm-dd for today in the browser's own timezone, not UTC — so the date input's default and max agree with what the reviewer calls "today". */
-function todayLocalDate(): string {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
-
-/**
- * A yyyy-mm-dd date has no time of its own; parsed as UTC midnight it can land
- * on the wrong side of midnight in the reviewer's timezone, so a past day is
- * sent as local noon. Today is sent as null — "now" on the server — because
- * noon today is still in the future every morning, and the server refuses that.
- */
-function occurredAtIso(date: string): string | null {
-  if (date >= todayLocalDate()) return null;
-  return new Date(`${date}T12:00:00`).toISOString();
-}
-
-/**
- * "Something happened off-thread" — a meeting happened, a deal closed — that
- * the AI has no reply to read and classify. Distinct from
- * `ClassificationPicker`: that corrects what the AI read into the last
- * message; this records an event the AI never saw and starts the new stage's
- * sequence from it.
- *
- * Self-manages its own open state and renders a default trigger when neither
- * `open`/`onOpenChange` is supplied (like `ActivityDrawer`); pass those two to
- * drive it from a menu item instead, with no trigger of its own (like
- * `RegenerateDraftDialog`).
- */
-export function MoveStageDialog({ categories, categoryKey, subcategoryId, contextVersion, onMove, trigger, disabled, open: openProp, onOpenChange: onOpenChangeProp }: {
-  categories: Data[];
-  categoryKey: string | null;
-  subcategoryId: string | null;
-  contextVersion: number;
-  onMove: (body: MoveStageBody) => Promise<boolean | void>;
-  trigger?: React.ReactNode;
-  disabled?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}) {
-  const [internalOpen, setInternalOpen] = useState(false);
-  const controlled = openProp !== undefined;
-  const open = controlled ? Boolean(openProp) : internalOpen;
-  const setOpen = (next: boolean) => { if (controlled) onOpenChangeProp?.(next); else setInternalOpen(next); };
-
-  const currentValue = subcategoryId || (categoryKey ? `category:${categoryKey}` : "");
-  const groups = categories.map((category) => ({
-    key: String(category.key),
-    subcategories: asList<Data>(category.subcategories).filter((item) => item.active !== false && String(item.id) !== subcategoryId),
-  }));
-
-  const [stage, setStage] = useState("");
-  const [date, setDate] = useState(todayLocalDate);
-  const [note, setNote] = useState("");
-  // Which of the two submit buttons is in flight, so only that one says so.
-  const [working, setWorking] = useState<MoveStageBody["next"] | null>(null);
-  useEffect(() => { if (open) { setStage(""); setDate(todayLocalDate()); setNote(""); setWorking(null); } }, [open]);
-
-  const ready = Boolean(stage) && !working;
-  const submit = async (next: MoveStageBody["next"]) => {
-    if (!ready) return;
-    const chosen: ClassificationChoice = stage.startsWith("category:")
-      ? { categoryKey: stage.slice("category:".length), subcategoryId: null }
-      : {
-        categoryKey: String(categories.flatMap((item) => asList<Data>(item.subcategories)).find((item) => String(item.id) === stage)?.categoryKey ?? categoryKey ?? "other"),
-        subcategoryId: stage,
-      };
-    setWorking(next);
-    const ok = await onMove({ ...chosen, expectedContextVersion: contextVersion, occurredAt: occurredAtIso(date), note: note.trim() || null, next });
-    setWorking(null);
-    if (ok !== false) setOpen(false);
-  };
-
-  return (
-    <div className="contents" onClick={(event) => event.stopPropagation()}>
-    <Modal.Root open={open} onOpenChange={(next) => { if (!working) setOpen(next); }}>
-      {!controlled && <Modal.Trigger asChild>{trigger ?? <button type="button" disabled={disabled} className={cn(primaryButtonClass, "h-7 gap-1.5 whitespace-nowrap px-2.5 text-label-xs")}><RiArrowRightLine className="size-3.5" aria-hidden="true" />Move stage</button>}</Modal.Trigger>}
-      <Modal.Content size="max-w-lg">
-        <Modal.Header icon={RiArrowRightLine}>
-          <Modal.Title>Move stage</Modal.Title>
-          <Modal.Description>Something happened outside the conversation — record it and move this lead on.</Modal.Description>
-        </Modal.Header>
-        <Modal.Body className="space-y-3">
-          <label className="block">
-            <span className="mb-1.5 block text-label-xs text-text-sub-600">New stage</span>
-            <Select.Root value={stage} disabled={Boolean(working)} onValueChange={(next) => setStage(next)}>
-              <Select.Trigger aria-label="New stage" className="w-full">
-                <Select.Value placeholder="Choose a stage…" />
-              </Select.Trigger>
-              <Select.Content>
-                {groups.map((group) => (
-                  <Select.Group key={group.key}>
-                    <Select.GroupLabel>{humanize(group.key)}</Select.GroupLabel>
-                    {currentValue !== `category:${group.key}` && <Select.Item value={`category:${group.key}`}>{humanize(group.key)} · no subcategory</Select.Item>}
-                    {group.subcategories.map((item) => <Select.Item key={String(item.id)} value={String(item.id)}>{String(item.name)}</Select.Item>)}
-                  </Select.Group>
-                ))}
-              </Select.Content>
-            </Select.Root>
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-label-xs text-text-sub-600">When did it happen?</span>
-            <input
-              type="date"
-              aria-label="When did it happen"
-              value={date}
-              max={todayLocalDate()}
-              disabled={Boolean(working)}
-              onChange={(event) => setDate(event.target.value)}
-              className={fieldClass}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-label-xs text-text-sub-600">What happened? (optional)</span>
-            <textarea
-              value={note}
-              disabled={Boolean(working)}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="e.g. They want pricing for 50 seats; loop in their CTO"
-              className={cn(fieldClass, "min-h-20 resize-y leading-6")}
-            />
-          </label>
-          <p className="text-paragraph-xs text-text-soft-400">The AI&apos;s reading of the last reply stays as it was. <strong className="font-medium text-text-sub-600">Add to follow-ups</strong> treats the new stage&apos;s first reply as already handled and schedules its follow-ups; <strong className="font-medium text-text-sub-600">Draft a reply now</strong> writes that first reply for you to send. Either way, the drafts use this note.</p>
-        </Modal.Body>
-        <Modal.Footer>
-          <Modal.Close asChild><button type="button" className={cn(secondaryButtonClass, "mr-auto")} disabled={Boolean(working)}>Cancel</button></Modal.Close>
-          <button type="button" className={secondaryButtonClass} disabled={!ready} onClick={() => void submit("reply")}>
-            <RiSparklingLine className="size-4" aria-hidden="true" />{working === "reply" ? "Moving…" : "Draft a reply now"}
-          </button>
-          <button type="button" className={primaryButtonClass} disabled={!ready} onClick={() => void submit("follow_up")}>
-            <RiTimerLine className="size-4" aria-hidden="true" />{working === "follow_up" ? "Moving…" : "Add to follow-ups"}
-          </button>
-        </Modal.Footer>
-      </Modal.Content>
-    </Modal.Root>
-    </div>
-  );
 }
 
 /**

@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { draftInOrg } from "./records";
 import { db } from "@/lib/db";
 import { inboxContacts, inboxMessages } from "@/lib/inbox/schema";
 import { companies, people } from "@/lib/leads/schema";
@@ -327,6 +328,17 @@ export async function listCrmActions(input: CrmActionFilters = {}) {
   const lastRunByRecord = new Map(lastRuns.map((row) => [row.recordId, row]));
   const dueMeetingByRecord = new Map(dueMeetings.map((row) => [row.recordId, { id: row.id, startAt: row.startAt, endAt: row.endAt }]));
   const followUpNotes = await latestFollowUpNotes(rows.map((row) => row.record.id));
+  // Whether the rep already answered each latest reply from AgentSDR (the
+  // rule of `inboundAnsweredFromCrm`); the stage picker defaults on it.
+  const latestInboundIds = rows.flatMap((row) => row.record.latestInboundMessageId ? [row.record.latestInboundMessageId] : []);
+  const answeredReplies = latestInboundIds.length
+    ? new Set((await db.select({ replyFor: crmDrafts.replyForMessageId }).from(crmDrafts).where(and(
+      draftInOrg(),
+      inArray(crmDrafts.crmRecordId, pageRecordIds),
+      inArray(crmDrafts.replyForMessageId, latestInboundIds),
+      eq(crmDrafts.status, "sent"),
+    ))).map((row) => row.replyFor))
+    : new Set<string | null>();
   const actions = rows.map((row) => {
     const classification = latestClassification.get(row.record.id) ?? null;
     const run = activeRun.get(row.record.id) ?? null;
@@ -405,6 +417,8 @@ export async function listCrmActions(input: CrmActionFilters = {}) {
       draftStepLabel: draftStep && draftStep.stepType === "follow_up" ? followUpStepLabel(draftStep.position, draftStep.name) : null,
       /** The rep's "Follow up later" note while it still applies, else null. */
       followUp,
+      /** The rep already answered the latest reply from AgentSDR. */
+      inboundAnswered: Boolean(row.record.latestInboundMessageId && answeredReplies.has(row.record.latestInboundMessageId)),
       latestInbound: latestInbound.get(row.record.id) ?? null,
       latestInboundExcerpt: latestInbound.get(row.record.id)?.bodyText.slice(0, 240) ?? "",
       classification,
@@ -694,6 +708,8 @@ export async function getCrmRecordWorkspace(recordId: string) {
       requiresReview: latestClassification.status === "proposed",
     } : null,
     aiChanged: Boolean(latestClassification && !latestClassification.acknowledgedAt),
+    /** The rep already answered the latest reply from AgentSDR (see `inboundAnsweredFromCrm`). */
+    inboundAnswered: drafts.some((draft) => draft.status === "sent" && draft.replyForMessageId === header.record.latestInboundMessageId && header.record.latestInboundMessageId !== null),
     conversations: conversationsWithMessages,
     messages,
     timeline,

@@ -7,6 +7,7 @@
  * Kept apart from ./inboxContext so the client-safe module never pulls the
  * postgres driver into the browser bundle.
  */
+import { inboundAnsweredFromCrm } from "./manualOutbound";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { isPersonDoNotContact } from "./policies";
@@ -175,7 +176,7 @@ export async function loadInboxCrmContextForConversation(
 ): Promise<InboxCrmContext | null> {
   const [[head], progress, [draftRow], [classification], doNotContact] = await Promise.all([
     db
-      .select({ ...recordHeadSelection, contextVersion: crmRecords.contextVersion })
+      .select({ ...recordHeadSelection, contextVersion: crmRecords.contextVersion, latestInboundMessageId: crmRecords.latestInboundMessageId })
       .from(crmRecords)
       .leftJoin(crmSubcategories, eq(crmSubcategories.id, crmRecords.subcategoryId))
       .where(and(inOrg(crmRecords), eq(crmRecords.id, scope.recordId)))
@@ -208,6 +209,9 @@ export async function loadInboxCrmContextForConversation(
     isPersonDoNotContact(db, scope.personId),
   ]);
   if (!head) return null;
+  const inboundAnswered = head.latestInboundMessageId
+    ? await inboundAnsweredFromCrm(db, scope.recordId, head.latestInboundMessageId)
+    : false;
 
   const draft: InboxCrmDraft | null = draftRow
     ? {
@@ -228,6 +232,7 @@ export async function loadInboxCrmContextForConversation(
     contextVersion: head.contextVersion,
     doNotContact,
     classificationId: classification?.id ?? null,
+    inboundAnswered,
     draft,
   };
 }

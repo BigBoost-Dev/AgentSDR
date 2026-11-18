@@ -54,7 +54,7 @@ import {
 } from "./CrmLayout";
 import { RecordBody } from "./CrmSkeletons";
 import { asList, asObject, crmFetch, displayName, errorMessage, formatDate, relativeDate } from "./crm-utils";
-import { ClassificationPicker, formatMeetingRange, MeetingOutcomeButtons, FollowUpDialog, followUpSuccessMessage, MoveStageDialog, moveStageSuccessMessage, RegenerateDraftDialog, humanize } from "./ActionRowTools";
+import { ClassificationPicker, formatMeetingRange, MeetingOutcomeButtons, FollowUpDialog, followUpSuccessMessage, RegenerateDraftDialog, humanize } from "./ActionRowTools";
 import { ContactAvatar } from "./ContactAvatar";
 import { takeRecordWorkspace } from "./recordPrefetch";
 import { announceRecordChanged } from "./recordEvents";
@@ -223,13 +223,6 @@ export default function CrmRecordClient({ recordId, variant = "page" }: { record
         activeRun={activeRun}
         onAction={mutate}
         onCallStarted={() => setCallsRefreshKey((key) => key + 1)}
-        moveStage={<MoveStageDialog
-          categories={categories}
-          categoryKey={String(data.categoryKey ?? asObject(data.classification).category ?? "other")}
-          subcategoryId={data.subcategoryId ? String(data.subcategoryId) : null}
-          contextVersion={Number(data.contextVersion)}
-          onMove={async (body) => { await mutate(`/records/${String(data.id)}/stage`, body, "POST", moveStageSuccessMessage(body)); return true; }}
-        />}
       />
 
       {notice && <div role="status" className="flex items-center gap-2 rounded-xl bg-success-lighter px-4 py-2.5 text-paragraph-sm text-success-dark ring-1 ring-inset ring-success-light"><RiCheckLine className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1">{notice}</span><button type="button" onClick={() => setNotice("")} className="text-label-xs opacity-70 hover:opacity-100">Dismiss</button></div>}
@@ -382,7 +375,7 @@ const WORKFLOW_BADGE: Record<string, { label: string; color: React.ComponentProp
   idle: { label: "Idle", color: "gray" },
 };
 
-function RecordHeader({ back, data, person, name, avatarUrl, currentStep, activeRun, onAction, onCallStarted, moveStage }: {
+function RecordHeader({ back, data, person, name, avatarUrl, currentStep, activeRun, onAction, onCallStarted }: {
   /** The full page's way back to its list; the pop-up has its own close. */
   back?: { href: string; label: string };
   data: Data;
@@ -394,8 +387,6 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
   onAction: (path: string, body?: Data, method?: string, success?: string) => Promise<void>;
   /** Bumps the Calls card's refreshKey once the extension accepts a call. */
   onCallStarted: () => void;
-  /** Move stage: record something that happened and move the lead on. */
-  moveStage: React.ReactNode;
 }) {
   const id = String(data.id);
   const [followUpOpen, setFollowUpOpen] = useState(false);
@@ -443,21 +434,17 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
           title={`Mark "${String(currentStep.name)}" as done without sending it; the next step waits its usual delay`}
           onClick={() => void onAction(`/records/${id}/skip`, {}, "POST", "Step skipped — the next one is scheduled")}
         aria-label="Skip step"><Button.Icon as={RiSkipForwardLine} /><span className="hidden sm:inline">Skip step</span></Button.Root>}
-        {moveStage}
         <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={async (at, note) => { await onAction(`/records/${id}/follow-up`, { at: at.toISOString(), note }, "POST", followUpSuccessMessage(at)); return true; }} />
         <Dropdown.Root>
           <Dropdown.Trigger asChild>
             <Button.Root variant="neutral" mode="stroke" size="xsmall" title="Manage record" aria-label="Manage record"><Button.Icon as={RiMoreLine} /></Button.Root>
           </Dropdown.Trigger>
           <Dropdown.Content align="end">
-            {/* Pause and snooze are one-click record actions, so they sit
-                with the other record actions rather than in a card of their own. */}
+            {/* Pause is a one-click record action, so it sits with the
+                other record actions rather than in a card of their own. */}
             {!closed && <>
               <Dropdown.Item onSelect={() => void onAction(`/records/${id}/${paused ? "resume" : "pause"}`, {}, "POST", paused ? "Sequence resumed" : "Sequence paused")}>
                 <Dropdown.ItemIcon as={paused ? RiPlayLine : RiPauseLine} />{paused ? "Resume sequence" : "Pause sequence"}
-              </Dropdown.Item>
-              <Dropdown.Item onSelect={() => void onAction(`/records/${id}/snooze`, { until: new Date(Date.now() + 86_400_000).toISOString() }, "POST", "Next action snoozed for one day")}>
-                <Dropdown.ItemIcon as={RiTimerLine} />Snooze a day
               </Dropdown.Item>
               <Dropdown.Item onSelect={() => setFollowUpOpen(true)}>
                 <Dropdown.ItemIcon as={RiCalendarScheduleLine} />Follow up later…
@@ -772,10 +759,8 @@ function InlineWarning({ tone, title, detail }: { tone: "warning" | "danger"; ti
  * reply about to be sent. The picker itself is shared with the Action
  * required table, so the two places cannot drift.
  *
- * Move stage is a separate control in the lead header: the picker fixes what
- * the AI misread from the last reply, Move stage records something the AI
- * never saw at all — the two need their own controls, not one dropdown doing
- * both jobs.
+ * It is also the only way to move a lead's stage: a pick opens the "What
+ * next?" confirm step (reply now, or just schedule follow-ups, plus a note).
  */
 function ClassificationSelect({ record, categories, onAction }: { record: Data; categories: Data[]; onAction: (path: string, body?: Data, method?: string, success?: string) => Promise<void> }) {
   const classification = asObject(record.classification);
@@ -794,12 +779,14 @@ function ClassificationSelect({ record, categories, onAction }: { record: Data; 
         categoryKey={categoryKey}
         subcategoryId={subcategoryId}
         subcategoryName={record.subcategory ? String(record.subcategory) : null}
-        title="Fix classification — the AI misread this reply"
-        onChange={(chosen) => void onAction(`/records/${String(record.id)}/classification`, {
+        title="Change stage"
+        confirm={{ inboundAnswered: Boolean(record.inboundAnswered) }}
+        onChange={(chosen, extra) => onAction(`/records/${String(record.id)}/classification`, {
           ...chosen,
           expectedContextVersion: record.contextVersion,
           classificationId: classification.id,
-        }, "PATCH", "Classification updated")}
+          ...(extra ?? {}),
+        }, "PATCH", extra?.next === "follow_up" ? "Stage updated — follow-ups scheduled" : "Stage updated — a new draft is being written")}
       />
     </div>
   );

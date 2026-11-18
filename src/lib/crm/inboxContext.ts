@@ -53,6 +53,8 @@ export type InboxCrmContext = InboxCrmSummary & {
   doNotContact: boolean;
   /** Latest classification row, which the human-classification PATCH expects. */
   classificationId: string | null;
+  /** The rep already answered the latest reply from AgentSDR; the stage picker's confirm step defaults on it. */
+  inboundAnswered: boolean;
   draft: InboxCrmDraft | null;
 };
 

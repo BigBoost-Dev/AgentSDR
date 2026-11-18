@@ -4,7 +4,7 @@ import { useState } from "react";
 import { RiErrorWarningLine, RiLoader4Line, RiRouteLine, RiSparkling2Fill } from "@remixicon/react";
 import * as Button from "@/components/alignui/button";
 import { useDialogs } from "@/components/DialogProvider";
-import { ClassificationPicker, humanize, type ClassificationChoice } from "@/components/crm/ActionRowTools";
+import { ClassificationPicker, humanize, type ClassificationChoice, type StageChangeExtra } from "@/components/crm/ActionRowTools";
 import { crmFetch, errorMessage } from "@/components/crm/crm-utils";
 import type { InboxCrmContext, InboxCrmDraft, InboxCrmSummary } from "@/lib/linkedin/messages/crmContext";
 import { inboxCrmStepLabel } from "@/lib/linkedin/messages/crmContext";
@@ -67,7 +67,7 @@ export function CrmCategoryControl({
   const dialogs = useDialogs();
   const [saving, setSaving] = useState(false);
 
-  const classify = async (choice: ClassificationChoice) => {
+  const classify = async (choice: ClassificationChoice, extra?: StageChangeExtra) => {
     if (saving) return;
     setSaving(true);
     try {
@@ -77,6 +77,7 @@ export function CrmCategoryControl({
         expectedContextVersion: context.contextVersion,
       };
       if (context.classificationId) body.classificationId = context.classificationId;
+      if (extra) Object.assign(body, extra);
       await crmFetch(`/records/${context.recordId}/classification`, { method: "PATCH", body: JSON.stringify(body) });
       onClassified();
     } catch (err) {
@@ -93,7 +94,8 @@ export function CrmCategoryControl({
         categoryKey={context.categoryKey}
         subcategoryId={context.subcategoryId}
         subcategoryName={context.subcategoryName}
-        onChange={(choice) => void classify(choice)}
+        confirm={{ inboundAnswered: context.inboundAnswered }}
+        onChange={(choice, extra) => classify(choice, extra)}
         disabled={disabled || saving}
         compact
         title="CRM category — change to reclassify"

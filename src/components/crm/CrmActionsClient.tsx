@@ -7,19 +7,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAlarmWarningFill,
   RiArchiveStackFill,
-  RiArrowRightLine,
   RiCalendarScheduleLine,
   RiCloseCircleLine,
   RiCheckboxCircleFill,
   RiCheckDoubleLine,
   RiCheckLine,
   RiCloseLine,
-  RiDeleteBinLine,
   RiDraftLine,
   RiEqualizer2Line,
   RiErrorWarningFill,
   RiErrorWarningLine,
-  RiExternalLinkLine,
   RiFilterOffLine,
   RiFlashlightFill,
   RiForbid2Line,
@@ -57,7 +54,7 @@ import { cn } from "@/utils/cn";
 import { ContactAvatar } from "./ContactAvatar";
 import { ErrorState, primaryButtonClass, secondaryButtonClass } from "./CrmLayout";
 import { RowsSkeleton } from "./CrmSkeletons";
-import { CategoryDot, ClassificationPicker, HoverPreview, HoverPreviewProvider, FollowUpDialog, followUpSuccessMessage, InlineDraftEditor, MeetingOutcomeTools, MoveStageDialog, moveStageSuccessMessage, RegenerateDraftDialog, humanize, type MoveStageBody, type RowMutation } from "./ActionRowTools";
+import { CategoryDot, ClassificationPicker, HoverPreview, HoverPreviewProvider, FollowUpDialog, followUpSuccessMessage, InlineDraftEditor, MeetingOutcomeTools, RegenerateDraftDialog, humanize, type RowMutation, type StageChangeExtra } from "./ActionRowTools";
 import { asList, asObject, CATEGORY_LABELS, crmFetch, displayName, errorMessage, formatDate, relativeDate, timeAgo } from "./crm-utils";
 import { prefetchRecordWorkspace } from "./recordPrefetch";
 import { useRecordChanged } from "./recordEvents";
@@ -390,10 +387,13 @@ export function useRowMutations({ onActionsChange, pipeline, onMutated, onRowGon
     timers.current.push(setTimeout(() => { void refreshRow(id).catch(() => undefined); }, 8_000));
   }, [refreshRow]);
 
-  const classify = useCallback(async (action: Action, choice: { categoryKey: string; subcategoryId: string | null }) => {
+  // `extra` comes from the picker's confirm step (what next, and a note);
+  // Accept / Keep on an AI proposal send none and apply at once.
+  const classify = useCallback(async (action: Action, choice: { categoryKey: string; subcategoryId: string | null }, extra?: StageChangeExtra) => {
     const id = actionId(action);
     const record = asObject(action.record);
-    const ok = await mutateRow(id, `/records/${id}/classification`, { ...choice, expectedContextVersion: record.contextVersion, classificationId: asObject(action.classification).id }, "PATCH", "Classification updated — a new draft is being written");
+    const success = !extra || extra.next === "reply" ? "Stage updated — a new draft is being written" : "Stage updated — follow-ups scheduled";
+    const ok = await mutateRow(id, `/records/${id}/classification`, { ...choice, expectedContextVersion: record.contextVersion, classificationId: asObject(action.classification).id, ...(extra ?? {}) }, "PATCH", success);
     if (ok) refreshLater(id);
   }, [mutateRow, refreshLater]);
 
@@ -720,6 +720,7 @@ export function describeAction(action: Action, categories: Data[], pipeline: boo
     proposedCategoryKey, proposedSubcategoryId, proposedLabel, keepCategoryKey, keepSubcategoryId,
     dueLabel, dueDetail, dueColor, dueIcon, actionText, name, companyDomain, companyLabel,
     dueMeeting: asDueMeeting(action.dueMeeting),
+    inboundAnswered: Boolean(action.inboundAnswered),
     followUpNote, latestReplyFull, latestReply, draft, draftFull, draftReply, editable, repliedAt, sequenceLabel, stepLabel, sendableDraft, draftState,
     avatarUrl: person.profilePictureUrl ? String(person.profilePictureUrl) : null,
   };
@@ -766,7 +767,7 @@ export function ProposalInline({ label, busy, onAccept, onKeep, className }: { l
 }
 
 /** Classification chip — the cell centres it in the row — and, while the AI holds a proposal, the choice to accept it. */
-function ClassificationCell({ row, categories, busy, onClassify }: { row: Row; categories: Data[]; busy: boolean; onClassify: (choice: { categoryKey: string; subcategoryId: string | null }) => Promise<void> }) {
+function ClassificationCell({ row, categories, busy, onClassify }: { row: Row; categories: Data[]; busy: boolean; onClassify: (choice: { categoryKey: string; subcategoryId: string | null }, extra?: StageChangeExtra) => Promise<void> }) {
   const categoryKey = row.category === "unclassified" ? null : row.category;
   const subcategoryName = row.subcategory.name ? String(row.subcategory.name) : null;
   return <div className="min-w-0">
@@ -779,7 +780,8 @@ function ClassificationCell({ row, categories, busy, onClassify }: { row: Row; c
       subcategoryName={subcategoryName}
       disabled={busy}
       title="Fix classification — the AI misread this reply"
-      onChange={(choice) => void onClassify(choice)}
+      confirm={{ inboundAnswered: row.inboundAnswered }}
+      onChange={(choice, extra) => onClassify(choice, extra)}
     />
     {row.classification.status === "proposed" && <ProposalInline
         className="mt-1"
@@ -872,10 +874,10 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
   onOpen: () => void;
   onToggleEdit: () => void;
   onMutate: RowMutation;
-  onClassify: (choice: { categoryKey: string; subcategoryId: string | null }) => Promise<void>;
+  onClassify: (choice: { categoryKey: string; subcategoryId: string | null }, extra?: StageChangeExtra) => Promise<void>;
 }) {
   const row = describeAction(action, categories, pipeline, now);
-  const { id, href, record, editable } = row;
+  const { id, href, editable } = row;
   const { arm, cancel } = useRecordPrefetch(id, href);
   const sendable = row.sendableDraft && !busy;
   const openRow = (event: React.MouseEvent<HTMLTableRowElement>) => {
@@ -946,16 +948,9 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
       </Table.Cell>
       <Table.Cell className="px-2 py-3" data-row-tools onKeyDown={(event) => event.stopPropagation()}>
         <RowMenu
-          href={href}
           draft={editable}
-          hasRun={Boolean(row.activeRun.run)}
           recordId={id}
-          categories={categories}
-          categoryKey={row.category === "unclassified" ? null : row.category}
-          subcategoryId={record.subcategoryId ? String(record.subcategoryId) : null}
-          contextVersion={Number(record.contextVersion)}
           onMutate={onMutate}
-          onMoveStage={(body) => onMutate(`/records/${id}/stage`, body, "POST", moveStageSuccessMessage(body))}
           label={`More actions for ${row.name}`}
         />
       </Table.Cell>
@@ -968,42 +963,25 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
   </>;
 }
 
-export function RowMenu({ href, draft, hasRun, recordId, categories, categoryKey, subcategoryId, contextVersion, onMutate, onMoveStage, label, className }: {
-  href: string;
+export function RowMenu({ draft, recordId, onMutate, label, className }: {
   draft: Data | null;
-  hasRun: boolean;
   recordId: string;
-  categories: Data[];
-  categoryKey: string | null;
-  subcategoryId: string | null;
-  contextVersion: number;
   onMutate: RowMutation;
-  onMoveStage: (body: MoveStageBody) => Promise<boolean>;
   label: string;
   className?: string;
 }) {
-  const tomorrow = () => new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const [regenerateOpen, setRegenerateOpen] = useState(false);
-  const [moveStageOpen, setMoveStageOpen] = useState(false);
   const [followUpOpen, setFollowUpOpen] = useState(false);
   return <>
     <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={(at, note) => onMutate(`/records/${recordId}/follow-up`, { at: at.toISOString(), note }, "POST", followUpSuccessMessage(at))} />
     {draft && <RegenerateDraftDialog open={regenerateOpen} onOpenChange={setRegenerateOpen} onSubmit={(feedback) => onMutate(`/drafts/${String(draft.id)}/regenerate`, { feedback }, "POST", "Draft rewritten with your notes")} />}
-    <MoveStageDialog open={moveStageOpen} onOpenChange={setMoveStageOpen} categories={categories} categoryKey={categoryKey} subcategoryId={subcategoryId} contextVersion={contextVersion} onMove={onMoveStage} />
     <Dropdown.Root>
       <Dropdown.Trigger asChild>
         <Button.Root variant="neutral" mode="ghost" size="xsmall" aria-label={label} className={className}><Button.Icon as={RiMoreLine} /></Button.Root>
       </Dropdown.Trigger>
       <Dropdown.Content align="end">
-        <Dropdown.Item asChild><Link href={href}><Dropdown.ItemIcon as={RiExternalLinkLine} />Open record</Link></Dropdown.Item>
-        <Dropdown.Item onSelect={() => setMoveStageOpen(true)}><Dropdown.ItemIcon as={RiArrowRightLine} />Move stage…</Dropdown.Item>
         <Dropdown.Item onSelect={() => setFollowUpOpen(true)}><Dropdown.ItemIcon as={RiCalendarScheduleLine} />Follow up later…</Dropdown.Item>
-        {hasRun && <Dropdown.Item onSelect={() => void onMutate(`/records/${recordId}/snooze`, { until: tomorrow() }, "POST", "Snoozed for a day")}><Dropdown.ItemIcon as={RiTimerLine} />Snooze a day</Dropdown.Item>}
-        {draft && <>
-          <Dropdown.Separator />
-          <Dropdown.Item onSelect={() => setRegenerateOpen(true)}><Dropdown.ItemIcon as={RiRefreshLine} />Regenerate draft…</Dropdown.Item>
-          <Dropdown.Item destructive onSelect={() => void onMutate(`/drafts/${String(draft.id)}/discard`, {}, "POST", "Draft discarded")}><Dropdown.ItemIcon as={RiDeleteBinLine} />Discard draft</Dropdown.Item>
-        </>}
+        {draft && <Dropdown.Item onSelect={() => setRegenerateOpen(true)}><Dropdown.ItemIcon as={RiRefreshLine} />Regenerate draft…</Dropdown.Item>}
         <Dropdown.Separator />
         <Dropdown.Item destructive onSelect={() => void onMutate(`/records/${recordId}/close`, { reason: "Discarded by operator" }, "POST", "Lead discarded — it comes back if they reply")}><Dropdown.ItemIcon as={RiCloseCircleLine} />Discard lead</Dropdown.Item>
       </Dropdown.Content>
@@ -1033,7 +1011,7 @@ export function ActionCard({ action, categories, now, busy, onOpen, onMutate, on
   busy: boolean;
   onOpen: () => void;
   onMutate: RowMutation;
-  onClassify: (choice: { categoryKey: string; subcategoryId: string | null }) => Promise<void>;
+  onClassify: (choice: { categoryKey: string; subcategoryId: string | null }, extra?: StageChangeExtra) => Promise<void>;
 }) {
   const row = describeAction(action, categories, pipeline, now);
   const { id, href, record, editable } = row;
@@ -1071,16 +1049,9 @@ export function ActionCard({ action, categories, now, busy, onOpen, onMutate, on
       </div>
       <div data-row-tools className="-mr-1.5 -mt-1">
         <RowMenu
-          href={href}
           draft={editable}
-          hasRun={Boolean(row.activeRun.run)}
           recordId={id}
-          categories={categories}
-          categoryKey={row.category === "unclassified" ? null : row.category}
-          subcategoryId={record.subcategoryId ? String(record.subcategoryId) : null}
-          contextVersion={Number(record.contextVersion)}
           onMutate={onMutate}
-          onMoveStage={(body) => onMutate(`/records/${id}/stage`, body, "POST", moveStageSuccessMessage(body))}
           label={`More actions for ${row.name}`}
         />
       </div>
@@ -1096,7 +1067,8 @@ export function ActionCard({ action, categories, now, busy, onOpen, onMutate, on
         subcategoryName={row.subcategory.name ? String(row.subcategory.name) : null}
         disabled={busy}
         title="Fix classification — the AI misread this reply"
-        onChange={(choice) => void onClassify(choice)}
+        confirm={{ inboundAnswered: row.inboundAnswered }}
+      onChange={(choice, extra) => onClassify(choice, extra)}
       />
       {row.classification.status === "proposed" && <ProposalInline
         label={row.proposedLabel}

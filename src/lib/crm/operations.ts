@@ -29,10 +29,11 @@ import {
   startFollowUpsInTransaction,
   startSequenceRunInTransaction,
 } from "./sequences";
+import { stageChangeRoute } from "./stageChange";
 import { STAGE_MOVED_EVENT, type StageMoveNext } from "./stageMove";
 import { inOrg } from "@/lib/tenancy/scope";
 
-export async function applyHumanClassification(input: {
+export type ApplyHumanClassificationInput = {
   recordId: string;
   categoryKey: CrmCategoryKey;
   subcategoryId: string | null;
@@ -40,69 +41,91 @@ export async function applyHumanClassification(input: {
   classificationId?: string;
   reason?: string | null;
   actorRef?: string | null;
-}) {
-  return withCrmTransaction(async (tx) => {
-    const before = await lockCrmRecord(tx, input.recordId);
-    if (!before.latestInboundMessageId) {
-      throw new CrmConflictError("CRM record has no inbound message to classify");
+  /**
+   * The picker's "What next?". "follow_up" drafts no reply: the stage's
+   * follow-ups are scheduled instead. Omitted or "reply": a reply is drafted
+   * unless the rep already answered from AgentSDR.
+   */
+  next?: StageMoveNext;
+  /**
+   * What happened. Recorded as a `stage.moved` event (in place of
+   * `classification.changed`) because that event is what drafts read.
+   */
+  note?: string | null;
+};
+
+export function applyHumanClassification(input: ApplyHumanClassificationInput) {
+  return withCrmTransaction((tx) => applyHumanClassificationInTransaction(tx, input));
+}
+
+export async function applyHumanClassificationInTransaction(tx: CrmTransaction, input: ApplyHumanClassificationInput) {
+  const before = await lockCrmRecord(tx, input.recordId);
+  if (!before.latestInboundMessageId) {
+    throw new CrmConflictError("CRM record has no inbound message to classify");
+  }
+  let classificationId = input.classificationId;
+  if (!classificationId) {
+    const [existing] = await tx.select().from(crmClassifications).where(and(
+      eq(crmClassifications.crmRecordId, before.id),
+      eq(crmClassifications.messageId, before.latestInboundMessageId),
+      eq(crmClassifications.expectedContextVersion, input.expectedContextVersion),
+    )).limit(1).for("update");
+    if (existing) {
+      const [classification] = await tx.update(crmClassifications).set({
+        proposedCategoryKey: input.categoryKey,
+        proposedSubcategoryId: input.subcategoryId,
+        appliedCategoryKey: input.categoryKey,
+        appliedSubcategoryId: input.subcategoryId,
+        confidence: existing.confidence ?? "1",
+        reasoning: input.reason?.trim() || existing.reasoning || "Classified by an authenticated operator",
+        status: "accepted",
+        error: null,
+        acknowledgedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(crmClassifications.id, existing.id)).returning();
+      classificationId = classification!.id;
+    } else {
+      const [classification] = await tx.insert(crmClassifications).values({
+        crmRecordId: before.id,
+        messageId: before.latestInboundMessageId,
+        expectedContextVersion: input.expectedContextVersion,
+        previousCategoryKey: before.categoryKey,
+        previousSubcategoryId: before.subcategoryId,
+        proposedCategoryKey: input.categoryKey,
+        proposedSubcategoryId: input.subcategoryId,
+        appliedCategoryKey: input.categoryKey,
+        appliedSubcategoryId: input.subcategoryId,
+        confidence: "1",
+        reasoning: input.reason?.trim() || "Classified by an authenticated operator",
+        status: "accepted",
+        acknowledgedAt: new Date(),
+      }).returning();
+      if (!classification) throw new Error("Human classification insert did not return a row");
+      classificationId = classification.id;
     }
-    let classificationId = input.classificationId;
-    if (!classificationId) {
-      const [existing] = await tx.select().from(crmClassifications).where(and(
-        eq(crmClassifications.crmRecordId, before.id),
-        eq(crmClassifications.messageId, before.latestInboundMessageId),
-        eq(crmClassifications.expectedContextVersion, input.expectedContextVersion),
-      )).limit(1).for("update");
-      if (existing) {
-        const [classification] = await tx.update(crmClassifications).set({
-          proposedCategoryKey: input.categoryKey,
-          proposedSubcategoryId: input.subcategoryId,
-          appliedCategoryKey: input.categoryKey,
-          appliedSubcategoryId: input.subcategoryId,
-          confidence: existing.confidence ?? "1",
-          reasoning: input.reason?.trim() || existing.reasoning || "Classified by an authenticated operator",
-          status: "accepted",
-          error: null,
-          acknowledgedAt: new Date(),
-          updatedAt: new Date(),
-        }).where(eq(crmClassifications.id, existing.id)).returning();
-        classificationId = classification!.id;
-      } else {
-        const [classification] = await tx.insert(crmClassifications).values({
-          crmRecordId: before.id,
-          messageId: before.latestInboundMessageId,
-          expectedContextVersion: input.expectedContextVersion,
-          previousCategoryKey: before.categoryKey,
-          previousSubcategoryId: before.subcategoryId,
-          proposedCategoryKey: input.categoryKey,
-          proposedSubcategoryId: input.subcategoryId,
-          appliedCategoryKey: input.categoryKey,
-          appliedSubcategoryId: input.subcategoryId,
-          confidence: "1",
-          reasoning: input.reason?.trim() || "Classified by an authenticated operator",
-          status: "accepted",
-          acknowledgedAt: new Date(),
-        }).returning();
-        if (!classification) throw new Error("Human classification insert did not return a row");
-        classificationId = classification.id;
-      }
-    }
-    const updated = await setRecordClassificationInTransaction(tx, {
-      ...input,
-      classificationId,
-      source: "human",
-      actorType: "authenticated_operator",
-    });
-    // Confirmed after the rep already replied from AgentSDR: that reply was
-    // the immediate one, so the confirmed stage continues with its
-    // follow-ups instead of drafting a second reply.
-    const repliedFromCrm = await inboundAnsweredFromCrm(tx, before.id, before.latestInboundMessageId);
-    // A re-applied classification keeps its id, and its draft job has
-    // usually already succeeded for the previous run's step.
-    return restartRecordWorkInTransaction(tx, updated, {
-      draftJob: repliedFromCrm ? null : { entityId: classificationId, requeueCompleted: true },
-      actorRef: input.actorRef,
-    });
+  }
+  const note = input.note?.trim() || null;
+  const updated = await setRecordClassificationInTransaction(tx, {
+    recordId: input.recordId,
+    categoryKey: input.categoryKey,
+    subcategoryId: input.subcategoryId,
+    expectedContextVersion: input.expectedContextVersion,
+    reason: input.reason,
+    actorRef: input.actorRef,
+    classificationId,
+    source: "human",
+    actorType: "authenticated_operator",
+    ...(note ? { eventType: STAGE_MOVED_EVENT, eventMeta: { occurredAt: new Date().toISOString(), note, next: input.next ?? "reply" } } : {}),
+  });
+  // Confirmed after the rep already replied from AgentSDR: that reply was
+  // the immediate one, so the confirmed stage continues with its
+  // follow-ups instead of drafting a second reply.
+  const repliedFromCrm = await inboundAnsweredFromCrm(tx, before.id, before.latestInboundMessageId);
+  // A re-applied classification keeps its id, and its draft job has
+  // usually already succeeded for the previous run's step.
+  return restartRecordWorkInTransaction(tx, updated, {
+    draftJob: repliedFromCrm || input.next === "follow_up" ? null : { entityId: classificationId, requeueCompleted: true },
+    actorRef: input.actorRef,
   });
 }
 
@@ -245,6 +268,48 @@ export async function moveRecordStageInTransaction(tx: CrmTransaction, input: Mo
   return restartRecordWorkInTransaction(tx, updated, {
     draftJob: input.next === "reply" ? { entityId: classification.id, requeueCompleted: true } : null,
     actorRef: input.actorRef,
+  });
+}
+
+export type ChangeRecordStageInput = {
+  recordId: string;
+  categoryKey: CrmCategoryKey;
+  subcategoryId: string | null;
+  expectedContextVersion: number;
+  next: StageMoveNext;
+  note?: string | null;
+  classificationId?: string;
+  actorRef?: string | null;
+};
+
+/**
+ * The classification picker's one entry point. While the AI is asking for a
+ * review of the latest reply (none, proposed or failed) the pick corrects
+ * that reading; otherwise the reading was right and the pick moves the stage.
+ * See `stageChangeRoute`.
+ */
+export function changeRecordStage(input: ChangeRecordStageInput) {
+  return withCrmTransaction(async (tx) => {
+    const record = await lockCrmRecord(tx, input.recordId);
+    const [latest] = record.latestInboundMessageId
+      ? await tx.select({ status: crmClassifications.status }).from(crmClassifications).where(and(
+        eq(crmClassifications.crmRecordId, record.id),
+        eq(crmClassifications.messageId, record.latestInboundMessageId),
+      )).orderBy(desc(crmClassifications.createdAt)).limit(1)
+      : [];
+    if (stageChangeRoute(latest?.status ?? null) === "correction") {
+      return applyHumanClassificationInTransaction(tx, input);
+    }
+    return moveRecordStageInTransaction(tx, {
+      recordId: input.recordId,
+      categoryKey: input.categoryKey,
+      subcategoryId: input.subcategoryId,
+      expectedContextVersion: input.expectedContextVersion,
+      note: input.note,
+      next: input.next,
+      occurredAt: null,
+      actorRef: input.actorRef,
+    });
   });
 }
 
