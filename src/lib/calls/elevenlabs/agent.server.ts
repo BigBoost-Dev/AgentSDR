@@ -296,23 +296,32 @@ export async function elevenLabsRehearsalSession(rehearsal: Rehearsal, mode: Ele
   );
 }
 
-type SharedVoice = { voice_id: string; name: string; gender?: string; age?: string; descriptive?: string; preview_url?: string; language?: string };
+type SharedVoice = { voice_id: string; name: string; gender?: string; age?: string; descriptive?: string; preview_url?: string; language?: string; accent?: string };
 const voiceCache = new Map<string, { at: number; voices: ElevenLabsVoice[] }>();
 
-/** Indian-English conversational voices from ElevenLabs' library, most used first; cached an hour. */
+/**
+ * Conversational English voices from ElevenLabs' library for the pickers:
+ * Indian-English first (the leads are in India), then the most used of other
+ * accents, each with its accent so the picker can show a flag. Cached an hour.
+ */
 export async function listElevenLabsVoices(): Promise<ElevenLabsVoice[]> {
   const key = await credentials();
   const cacheKey = currentOrganizationId();
   const cached = voiceCache.get(cacheKey);
   if (cached && Date.now() - cached.at < 60 * 60 * 1000) return cached.voices;
-  const query = new URLSearchParams({ accent: "indian", language: "en", use_cases: "conversational", page_size: "24", sort: "usage_character_count_1y" });
-  const body = await api<{ voices?: SharedVoice[] }>(key, "GET", `/v1/shared-voices?${query}`);
-  const voices = (body.voices ?? []).map((voice) => ({
-    id: voice.voice_id,
-    name: voice.name,
-    detail: [voice.gender, voice.age?.replace("_", " "), voice.descriptive].filter(Boolean).join(" · "),
-    previewUrl: voice.preview_url ?? null,
-  }));
+  const list = (extra: Record<string, string>) =>
+    api<{ voices?: SharedVoice[] }>(key, "GET", `/v1/shared-voices?${new URLSearchParams({ language: "en", use_cases: "conversational", sort: "usage_character_count_1y", ...extra })}`);
+  const [indian, others] = await Promise.all([list({ accent: "indian", page_size: "24" }), list({ page_size: "40" })]);
+  const seen = new Set<string>();
+  const voices = [...(indian.voices ?? []), ...(others.voices ?? []).filter((voice) => voice.accent?.toLowerCase() !== "indian").slice(0, 16)]
+    .filter((voice) => !seen.has(voice.voice_id) && seen.add(voice.voice_id))
+    .map((voice) => ({
+      id: voice.voice_id,
+      name: voice.name,
+      detail: [voice.gender, voice.age?.replace("_", " "), voice.descriptive].filter(Boolean).join(" · "),
+      previewUrl: voice.preview_url ?? null,
+      accent: voice.accent ?? null,
+    }));
   voiceCache.set(cacheKey, { at: Date.now(), voices });
   return voices;
 }

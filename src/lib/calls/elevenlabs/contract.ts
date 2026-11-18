@@ -10,7 +10,39 @@ export type ElevenLabsMode = (typeof ELEVENLABS_MODES)[number];
 /** "Monika Sogam – Natural Conversations", an Indian-English and Hindi voice from ElevenLabs' library. */
 export const DEFAULT_ELEVENLABS_VOICE = "EaBs7G1VibMrNAuz2Na7";
 
-export type ElevenLabsVoice = { id: string; name: string; detail: string; previewUrl: string | null };
+export type ElevenLabsVoice = {
+  id: string;
+  name: string;
+  detail: string;
+  previewUrl: string | null;
+  /** ElevenLabs' accent label ("indian", "american", "british", …), or null. */
+  accent: string | null;
+};
+
+const ACCENT_FLAGS: Record<string, string> = {
+  indian: "🇮🇳",
+  american: "🇺🇸",
+  british: "🇬🇧",
+  australian: "🇦🇺",
+  canadian: "🇨🇦",
+  irish: "🇮🇪",
+  scottish: "🏴",
+  "south african": "🇿🇦",
+  nigerian: "🇳🇬",
+  singaporean: "🇸🇬",
+  filipino: "🇵🇭",
+  "new zealand": "🇳🇿",
+};
+
+/** The flag in front of a voice in the pickers: its accent's country, 🌐 when it has none (Gemini's voices follow the instructions). */
+export function accentFlag(accent: string | null | undefined): string {
+  return (accent && ACCENT_FLAGS[accent.toLowerCase()]) || "🌐";
+}
+
+/** "🇮🇳 Monika Sogam · female · young · casual". */
+export function elevenLabsVoiceLabel(voice: ElevenLabsVoice): string {
+  return `${accentFlag(voice.accent)} ${voice.name}${voice.detail ? ` · ${voice.detail}` : ""}`;
+}
 
 /** What the browser needs to hold one rehearsal conversation with the organization's ElevenLabs agent. */
 export type ElevenLabsSessionResponse = {

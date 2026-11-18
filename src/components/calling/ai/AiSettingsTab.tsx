@@ -23,7 +23,7 @@ import { listCallingStations } from "@/lib/calls/client";
 import { setAiCampaignStations, updateAiCampaign } from "@/lib/calls/aiCampaigns/client";
 import type { CallingStation } from "@/lib/calls/stationContract";
 import { aiApi } from "@/lib/calls/aiCampaigns/client";
-import { DEFAULT_ELEVENLABS_VOICE, type ElevenLabsVoice } from "@/lib/calls/elevenlabs/contract";
+import { accentFlag, DEFAULT_ELEVENLABS_VOICE, elevenLabsVoiceLabel, type ElevenLabsVoice } from "@/lib/calls/elevenlabs/contract";
 import { cn } from "@/utils/cn";
 import { errorText, NumberPicker, useBeforeUnload } from "./aiShared";
 
@@ -250,8 +250,8 @@ export function AiSettingsTab({
                     <Select.Root size="small" value={draft.agentVoice} onValueChange={(value) => set("agentVoice", value)}>
                       <Select.Trigger aria-label="Voice"><Select.Value /></Select.Trigger>
                       <Select.Content>
-                        <Select.Item value={DEFAULT_VOICE}>Default ({DEFAULT_AGENT_VOICE})</Select.Item>
-                        {AGENT_VOICES.map((voice) => <Select.Item key={voice.id} value={voice.id}>{voice.label}</Select.Item>)}
+                        <Select.Item value={DEFAULT_VOICE}>{accentFlag(null)} Default ({DEFAULT_AGENT_VOICE})</Select.Item>
+                        {AGENT_VOICES.map((voice) => <Select.Item key={voice.id} value={voice.id}>{accentFlag(null)} {voice.label}</Select.Item>)}
                       </Select.Content>
                     </Select.Root>
                   </div>
@@ -265,10 +265,10 @@ export function AiSettingsTab({
                   <Select.Trigger aria-label="ElevenLabs voice"><Select.Value placeholder={elevenError ?? "Loading voices…"} /></Select.Trigger>
                   <Select.Content>
                     {!elevenVoices?.some((voice) => voice.id === DEFAULT_ELEVENLABS_VOICE) ? (
-                      <Select.Item value={DEFAULT_ELEVENLABS_VOICE}>Monika Sogam (default)</Select.Item>
+                      <Select.Item value={DEFAULT_ELEVENLABS_VOICE}>{accentFlag("indian")} Monika Sogam (default)</Select.Item>
                     ) : null}
                     {(elevenVoices ?? []).map((voice) => (
-                      <Select.Item key={voice.id} value={voice.id}>{voice.name}{voice.detail ? ` · ${voice.detail}` : ""}</Select.Item>
+                      <Select.Item key={voice.id} value={voice.id}>{elevenLabsVoiceLabel(voice)}</Select.Item>
                     ))}
                   </Select.Content>
                 </Select.Root>

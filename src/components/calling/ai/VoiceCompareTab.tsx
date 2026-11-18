@@ -7,7 +7,7 @@ import { AgentVoiceRehearsal } from "@/components/calls/AgentVoiceRehearsal";
 import { ElevenLabsVoiceRehearsal } from "@/components/calls/ElevenLabsVoiceRehearsal";
 import type { AiCampaignDetail, AiCampaignLead } from "@/lib/calls/aiCampaigns/api";
 import { aiApi, listAiLeads } from "@/lib/calls/aiCampaigns/client";
-import { DEFAULT_ELEVENLABS_VOICE, type ElevenLabsMode, type ElevenLabsVoice } from "@/lib/calls/elevenlabs/contract";
+import { accentFlag, DEFAULT_ELEVENLABS_VOICE, elevenLabsVoiceLabel, type ElevenLabsMode, type ElevenLabsVoice } from "@/lib/calls/elevenlabs/contract";
 
 const MADE_UP = "__made_up";
 
@@ -86,13 +86,12 @@ export function VoiceCompareTab({ campaign }: { campaign: AiCampaignDetail }) {
                 <Select.Trigger id={ids.voice}><Select.Value placeholder="Loading voices…" /></Select.Trigger>
                 <Select.Content>
                   {voices.status === "ok" && !voices.voices.some((candidate) => candidate.id === DEFAULT_ELEVENLABS_VOICE) ? (
-                    <Select.Item value={DEFAULT_ELEVENLABS_VOICE}>Monika Sogam (default)</Select.Item>
+                    <Select.Item value={DEFAULT_ELEVENLABS_VOICE}>{accentFlag("indian")} Monika Sogam (default)</Select.Item>
                   ) : null}
                   {voices.status === "ok"
                     ? voices.voices.map((candidate) => (
                         <Select.Item key={candidate.id} value={candidate.id}>
-                          {candidate.name}
-                          {candidate.detail ? ` · ${candidate.detail}` : ""}
+                          {elevenLabsVoiceLabel(candidate)}
                         </Select.Item>
                       ))
                     : null}
