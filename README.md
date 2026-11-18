@@ -86,7 +86,7 @@ Outbound usually means stitching together a lead database, an enrichment tool, a
   <tr>
     <td width="50%" valign="top">
       <a href="https://docs.agentsdr.ai/crm/action-required"><img src="docs/assets/readme/one-click.png" alt="Approving a drafted reply and sending it"></a>
-      <p><b>Approve and send in one click.</b> Edit the draft if you like; it goes out on the channel the lead wrote on. Nothing sends on its own. <a href="https://docs.agentsdr.ai/crm/action-required">Drafts →</a></p>
+      <p><b>Approve and send in one click.</b> Edit the draft if you like; it goes out on the channel the lead wrote on. Nothing sends on its own unless you turn on auto-send for a sequence. <a href="https://docs.agentsdr.ai/crm/action-required">Drafts →</a></p>
     </td>
     <td width="50%" valign="top">
       <a href="https://docs.agentsdr.ai/crm/pipeline"><img src="docs/assets/readme/pipeline.png" alt="The pipeline board: needs action, waiting on them, follow-ups exhausted"></a>
@@ -276,6 +276,18 @@ CI runs typecheck, lint, tests, a secret scan, the production build, the extensi
 
 AgentSDR contacts people on your behalf, so how it is used is your responsibility. LinkedIn's terms do not allow automation and accounts can be restricted; WhatsApp bans numbers that send unsolicited bulk messages; cold email is regulated by laws such as CAN-SPAM, GDPR and CASL; and many places require consent before a call is recorded. Sending limits, unsubscribe links and Do Not Contact reduce the risk but do not make any use compliant. Read [Responsible use](https://docs.agentsdr.ai/responsible-use) before you start.
 
+## How it compares
+
+AgentSDR replaces several tools at once, so the honest comparison depends on which one you are leaving. Each page below states only what the other product says about itself on its own site.
+
+- **Cold email:** [Instantly](https://agentsdr.ai/compare/instantly), [Smartlead](https://agentsdr.ai/compare/smartlead), [lemlist](https://agentsdr.ai/compare/lemlist), and the [best cold email software](https://agentsdr.ai/guides/best-cold-email-software) compared
+- **LinkedIn:** [HeyReach](https://agentsdr.ai/compare/heyreach), [Expandi](https://agentsdr.ai/compare/expandi), [Waalaxy](https://agentsdr.ai/compare/waalaxy), and the [best LinkedIn automation tools](https://agentsdr.ai/guides/best-linkedin-automation-tools)
+- **Data and enrichment:** [Apollo](https://agentsdr.ai/compare/apollo), [Clay](https://agentsdr.ai/compare/clay)
+- **AI SDRs:** [11x](https://agentsdr.ai/compare/11x), [Artisan](https://agentsdr.ai/compare/artisan), and the [best AI SDR tools](https://agentsdr.ai/guides/best-ai-sdr-tools)
+- **CRMs:** [Salesforce](https://agentsdr.ai/compare/salesforce), [HubSpot](https://agentsdr.ai/compare/hubspot), [Twenty](https://agentsdr.ai/compare/twenty), and the [best open-source CRMs](https://agentsdr.ai/guides/best-open-source-crm)
+
+More on the website: the [open-source CRM](https://agentsdr.ai/open-source-crm), the [AI CRM](https://agentsdr.ai/product/ai-crm), the [AI calling agent](https://agentsdr.ai/product/ai-calling) that phones leads over WhatsApp, the [WhatsApp CRM](https://agentsdr.ai/whatsapp-crm), [all comparisons](https://agentsdr.ai/compare) and the [guides](https://agentsdr.ai/guides).
+
 ## FAQ
 
 <details>
@@ -311,7 +323,7 @@ Any model on OpenRouter, with your own key. Each call is pinned to the provider 
 <details>
 <summary><b>Does the AI send replies on its own?</b></summary>
 
-No. Drafts, including follow-up sequence steps, wait in *Action required* until someone sends them, as written or edited. The AI can move a lead forward in the pipeline when it is confident; anything else is held for a person.
+Not by default. Drafts, including follow-up sequence steps, wait in *Action required* until someone sends them, as written or edited. A sequence can be set to send its follow-ups automatically, and separately its first reply after a 15-minute hold; both are off by default and stay inside each account's sending hours and gaps. The AI can move a lead forward in the pipeline when it is confident; anything else is held for a person.
 </details>
 
 <details>
@@ -325,6 +337,7 @@ Yes. Invite teammates from Settings → Members with the owner, admin or member 
 | Where | Best for |
 |---|---|
 | [Docs](https://docs.agentsdr.ai) | Setup guides, every feature, troubleshooting |
+| [Website](https://agentsdr.ai/guides) | Guides and comparisons with other sales tools |
 | [GitHub Discussions](https://github.com/Kandid-ai/AgentSDR/discussions) | Questions, ideas, and showing what you built |
 | [GitHub Issues](https://github.com/Kandid-ai/AgentSDR/issues/new/choose) | Bugs and feature requests (in the app: **Help → Report a bug**) |
 | [Security advisories](https://github.com/Kandid-ai/AgentSDR/security/advisories/new) | Vulnerabilities, reported privately |
