@@ -712,13 +712,15 @@ export function describeAction(action: Action, categories: Data[], pipeline: boo
   const dnc = Boolean(asObject(action.contactPolicy).doNotContact);
   const sendableDraft = Boolean(editable) && !dnc && Number(editable?.expectedContextVersion) === Number(record.contextVersion);
   const actionText = actionType(action);
+  // The rep's "Follow up later" note, while it still applies (server-decided).
+  const followUpNote = String(asObject(action.followUp).note ?? "").replace(/\s+/g, " ").trim();
   const draftState = draftStateOf({ editable: Boolean(editable), draftFull, status: String(draft.status ?? ""), dnc, sendable: sendableDraft, actionText });
   return {
     id, href, record, person, activeRun, inbound, subcategory, classification, category, channel, stage,
     proposedCategoryKey, proposedSubcategoryId, proposedLabel, keepCategoryKey, keepSubcategoryId,
     dueLabel, dueDetail, dueColor, dueIcon, actionText, name, companyDomain, companyLabel,
     dueMeeting: asDueMeeting(action.dueMeeting),
-    latestReplyFull, latestReply, draft, draftFull, draftReply, editable, repliedAt, sequenceLabel, stepLabel, sendableDraft, draftState,
+    followUpNote, latestReplyFull, latestReply, draft, draftFull, draftReply, editable, repliedAt, sequenceLabel, stepLabel, sendableDraft, draftState,
     avatarUrl: person.profilePictureUrl ? String(person.profilePictureUrl) : null,
   };
 }
@@ -805,6 +807,7 @@ function ReplyQuote({ row, lines = 1 }: { row: Row; lines?: 1 | 2 }) {
       <ChannelMark channel={row.channel} />
       <span title={formatDate(row.repliedAt)}>{timeAgo(row.repliedAt)}</span>
     </p>
+    {row.followUpNote && <p className="mt-1 truncate text-paragraph-xs text-text-sub-600" title={row.followUpNote}><span className="text-label-xs text-text-strong-950">Your note</span> {row.followUpNote}</p>}
   </div>;
 }
 
@@ -984,7 +987,7 @@ export function RowMenu({ href, draft, hasRun, recordId, categories, categoryKey
   const [moveStageOpen, setMoveStageOpen] = useState(false);
   const [followUpOpen, setFollowUpOpen] = useState(false);
   return <>
-    <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={(at) => onMutate(`/records/${recordId}/follow-up`, { at: at.toISOString() }, "POST", followUpSuccessMessage(at))} />
+    <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={(at, note) => onMutate(`/records/${recordId}/follow-up`, { at: at.toISOString(), note }, "POST", followUpSuccessMessage(at))} />
     {draft && <RegenerateDraftDialog open={regenerateOpen} onOpenChange={setRegenerateOpen} onSubmit={(feedback) => onMutate(`/drafts/${String(draft.id)}/regenerate`, { feedback }, "POST", "Draft rewritten with your notes")} />}
     <MoveStageDialog open={moveStageOpen} onOpenChange={setMoveStageOpen} categories={categories} categoryKey={categoryKey} subcategoryId={subcategoryId} contextVersion={contextVersion} onMove={onMoveStage} />
     <Dropdown.Root>

@@ -29,6 +29,7 @@ import {
 import { emailOutreachRowToMessageInput } from "./outreachHistory";
 import { CrmNotFoundError } from "./repository";
 import { crmDueState } from "./stateMachine";
+import { FOLLOW_UP_EVENT, followUpFromEventData, isFollowUpNoteCurrent, type FollowUpNote } from "./followUpNote";
 import type { CrmActionGroup } from "./actionGroups";
 import { crmActionableSql, crmActionGroupSql } from "./actionGroups.server";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
@@ -165,6 +166,26 @@ export async function countCrmActionGroups(): Promise<Record<CrmActionGroup, num
   const counts = { reply: 0, follow_up: 0, classification: 0, next_step: 0, meeting_outcome: 0, problem: 0 } satisfies Record<CrmActionGroup, number>;
   for (const row of rows) if (row.grp) counts[row.grp] = Number(row.total);
   return counts;
+}
+
+/**
+ * The newest "Follow up later" note of each record (record.follow_up_scheduled
+ * events, scoped to the organization), whether or not it still applies; the
+ * caller decides with `isFollowUpNoteCurrent`.
+ */
+export async function latestFollowUpNotes(recordIds: readonly string[]): Promise<Map<string, FollowUpNote & { contextVersion: number | null }>> {
+  const latest = new Map<string, FollowUpNote & { contextVersion: number | null }>();
+  if (!recordIds.length) return latest;
+  const rows = await db.select({ recordId: crmEvents.crmRecordId, toData: crmEvents.toData, actorRef: crmEvents.actorRef, createdAt: crmEvents.createdAt, contextVersion: crmEvents.contextVersion })
+    .from(crmEvents)
+    .where(and(inOrg(crmEvents), inArray(crmEvents.crmRecordId, [...recordIds]), eq(crmEvents.eventType, FOLLOW_UP_EVENT)))
+    .orderBy(desc(crmEvents.createdAt));
+  for (const row of rows) {
+    if (!row.recordId || latest.has(row.recordId)) continue;
+    const note = followUpFromEventData(row.toData, row);
+    if (note) latest.set(row.recordId, { ...note, contextVersion: row.contextVersion });
+  }
+  return latest;
 }
 
 export async function listCrmActions(input: CrmActionFilters = {}) {
@@ -305,10 +326,20 @@ export async function listCrmActions(input: CrmActionFilters = {}) {
   const policyByPerson = new Map(policies.map((policy) => [policy.personId, policy]));
   const lastRunByRecord = new Map(lastRuns.map((row) => [row.recordId, row]));
   const dueMeetingByRecord = new Map(dueMeetings.map((row) => [row.recordId, { id: row.id, startAt: row.startAt, endAt: row.endAt }]));
+  const followUpNotes = await latestFollowUpNotes(rows.map((row) => row.record.id));
   const actions = rows.map((row) => {
     const classification = latestClassification.get(row.record.id) ?? null;
     const run = activeRun.get(row.record.id) ?? null;
     const draft = currentDraft.get(row.record.id) ?? null;
+    const scheduled = followUpNotes.get(row.record.id) ?? null;
+    const followUp = scheduled && isFollowUpNoteCurrent({
+      eventContextVersion: scheduled.contextVersion,
+      recordContextVersion: row.record.contextVersion,
+      workflowState: row.record.workflowState,
+      nextActionAt: row.record.nextActionAt,
+      dueAt: scheduled.dueAt,
+      hasOpenDraft: draft?.status === "awaiting_review",
+    }) ? { dueAt: scheduled.dueAt, note: scheduled.note, actorRef: scheduled.actorRef, createdAt: scheduled.createdAt } : null;
     const draftStep = draft?.sequenceStepRunId ? draftStepByRunId.get(draft.sequenceStepRunId) ?? null : null;
     const aiChanged = Boolean(classification && !classification.acknowledgedAt);
     // Same precedence as crmActionGroupSql: an error or a send to reconcile
@@ -336,7 +367,8 @@ export async function listCrmActions(input: CrmActionFilters = {}) {
         : draft?.status === "delivery_uncertain"
           ? "Delivery reconciliation"
           : draft?.status === "awaiting_review"
-            ? draftStep?.stepType === "follow_up" ? "Follow-up review" : "Reply review"
+            // A draft written from a scheduled follow-up's note has no step.
+            ? draftStep?.stepType === "follow_up" || (followUp && !draft.sequenceStepRunId) ? "Follow-up review" : "Reply review"
             : row.record.nextActionAt && row.record.nextActionAt <= new Date()
               // Due from WhatsApp Calling (calls/crmFollowUp.ts) — a call-only
               // record, with no reply on it: the rep calls or messages them;
@@ -371,6 +403,8 @@ export async function listCrmActions(input: CrmActionFilters = {}) {
       dueMeeting: meetingOutcomeDue ? dueMeeting : null,
       /** e.g. "Follow-up 2 · Share Information" for the draft on the row; null for a hand-written or reply draft. */
       draftStepLabel: draftStep && draftStep.stepType === "follow_up" ? followUpStepLabel(draftStep.position, draftStep.name) : null,
+      /** The rep's "Follow up later" note while it still applies, else null. */
+      followUp,
       latestInbound: latestInbound.get(row.record.id) ?? null,
       latestInboundExcerpt: latestInbound.get(row.record.id)?.bodyText.slice(0, 240) ?? "",
       classification,
@@ -499,6 +533,16 @@ export async function getCrmRecordWorkspace(recordId: string) {
 
   const latestClassification = classifications[0] ?? null;
   const currentDraft = drafts.find((draft) => ["awaiting_review", "failed", "delivery_uncertain"].includes(draft.status)) ?? null;
+  const scheduledEvent = events.find((event) => event.eventType === FOLLOW_UP_EVENT);
+  const scheduledNote = scheduledEvent ? followUpFromEventData(scheduledEvent.toData, scheduledEvent) : null;
+  const followUp = scheduledEvent && scheduledNote && isFollowUpNoteCurrent({
+    eventContextVersion: scheduledEvent.contextVersion,
+    recordContextVersion: header.record.contextVersion,
+    workflowState: header.record.workflowState,
+    nextActionAt: header.record.nextActionAt,
+    dueAt: scheduledNote.dueAt,
+    hasOpenDraft: currentDraft?.status === "awaiting_review",
+  }) ? scheduledNote : null;
   const linkedinAccountByRef = new Map(linkedinAccounts.map((account) => [account.linkedinId, account]));
   // WhatsApp's accountRef is a Unipile account id too; name it by the rep's
   // number. Only read when the record has a WhatsApp conversation.
@@ -654,6 +698,8 @@ export async function getCrmRecordWorkspace(recordId: string) {
     messages,
     timeline,
     events,
+    /** The rep's "Follow up later" note while it still applies, else null. */
+    followUp,
     runs,
     stepRuns,
     draft: currentDraft ? {

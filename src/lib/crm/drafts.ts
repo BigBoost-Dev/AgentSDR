@@ -505,6 +505,12 @@ export const FALLBACK_STEP_INSTRUCTIONS = [
   "says they are not the right contact, thank them and ask who is.",
 ].join(" ");
 
+/**
+ * A follow-up that came due (dueFollowUpDrafts.ts): the draft's brief is the
+ * rep's note, and it is only started while the record still waits for `dueAt`.
+ */
+export type ScheduledFollowUpDraft = { note: string; dueAt: Date };
+
 const FALLBACK_DRAFT_STATUSES = ["generating", "awaiting_review", "failed"] as const;
 
 /**
@@ -517,8 +523,18 @@ const FALLBACK_DRAFT_STATUSES = ["generating", "awaiting_review", "failed"] as c
 async function loadFallbackDraftContext(
   tx: CrmTransaction,
   recordId: string,
+  scheduled: ScheduledFollowUpDraft | null = null,
 ): Promise<PreparedDraft | null> {
   const record = await lockCrmRecord(tx, recordId);
+  if (scheduled) {
+    // The claim, under the record's lock: still waiting for that very time,
+    // and nothing (open, failed or discarded) was ever drafted at this
+    // version, so a second run, or a retry after a failure, finds nothing to do.
+    if (record.workflowState !== "waiting" || record.nextActionAt?.getTime() !== scheduled.dueAt.getTime()) return null;
+    const [already] = await tx.select({ id: crmDrafts.id }).from(crmDrafts)
+      .where(and(eq(crmDrafts.crmRecordId, record.id), eq(crmDrafts.expectedContextVersion, record.contextVersion))).limit(1);
+    if (already) return null;
+  }
   // Both of these are "nothing to draft", not failures — returning null keeps
   // the job from retrying three times over a record we deliberately skip.
   if (!record.latestInboundMessageId) return null;
@@ -535,7 +551,7 @@ async function loadFallbackDraftContext(
   }
 
   const subject = await loadDraftSubject(tx, record, conversation.conversation.id, {
-    query: FALLBACK_STEP_INSTRUCTIONS,
+    query: scheduled?.note ?? FALLBACK_STEP_INSTRUCTIONS,
     knowledgeTags: [],
   });
 
@@ -580,12 +596,13 @@ async function loadFallbackDraftContext(
       channel: conversation.conversation.channel,
       sequenceStep: {
         id: null,
-        name: "Free-form reply",
+        name: scheduled ? "Scheduled follow-up" : "Free-form reply",
         position: 1,
-        stepType: "reply",
+        stepType: scheduled ? "follow_up" : "reply",
         subjectTemplate: null,
         bodyTemplate: null,
-        aiInstructions: FALLBACK_STEP_INSTRUCTIONS,
+        // A scheduled follow-up's brief is the operator's own note.
+        aiInstructions: scheduled?.note ?? FALLBACK_STEP_INSTRUCTIONS,
         knowledgeTags: [],
       },
       ...subject,
@@ -601,8 +618,9 @@ export async function generateFallbackDraft(
   recordId: string,
   dependencies: { complete?: DraftCompletion } = {},
   revision: DraftRevisionRequest | null = null,
+  scheduled: ScheduledFollowUpDraft | null = null,
 ): Promise<CrmDraft | null> {
-  const prepared = await withCrmTransaction((tx) => loadFallbackDraftContext(tx, recordId));
+  const prepared = await withCrmTransaction((tx) => loadFallbackDraftContext(tx, recordId, scheduled));
   if (!prepared) return null;
   try {
     const generated = await generateCrmDraft({ ...prepared.promptInput, revision, trace: draftTrace(prepared) }, dependencies);

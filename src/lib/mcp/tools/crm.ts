@@ -23,6 +23,7 @@ import {
   scheduleFollowUpOn,
 } from "@/lib/crm/operations";
 import { followUpDateError, MAX_FOLLOW_UP_DAYS } from "@/lib/crm/followUpDate";
+import { FOLLOW_UP_NOTE_MAX, FOLLOW_UP_NOTE_MIN } from "@/lib/crm/followUpNote";
 import { clearPersonDoNotContact, setPersonDoNotContact } from "@/lib/crm/policies";
 import { countCrmActionGroups, getCrmRecordWorkspace, listCrmActions } from "@/lib/crm/queries";
 import { crmDrafts, crmRecords, crmSequenceSteps } from "@/lib/crm/schema";
@@ -970,11 +971,12 @@ function registerAllCrmTools(server: McpServer) {
     {
       title: "Follow up on a date",
       description:
-        "For a lead who asked to be contacted later (\"get back to me in 45 days\"). Sends nothing now, stops the record's automated follow-ups and discards its open drafts, takes it off the Action required queue, and returns it there on that date as a due follow-up. A new reply from them before then brings it back as usual. Unlike crm_snooze it works without an active sequence and drops the remaining steps. Give `until` (ISO 8601) or `days` (max 730). Not for closed records or Do Not Contact people.",
+        "For a lead who asked to be contacted later (\"get back to me in 45 days\"). Sends nothing now, stops the record's automated follow-ups and discards its open drafts, takes it off the Action required queue, and returns it there on that date as a due follow-up, with a follow-up already drafted from your `note`. A new reply from them before then brings it back as usual. Unlike crm_snooze it works without an active sequence and drops the remaining steps. Give `until` (ISO 8601) or `days` (max 730). Not for closed records or Do Not Contact people.",
       inputSchema: z.object({
         recordId: uuid("recordId"),
         until: z.string().datetime({ offset: true }).optional(),
         days: z.number().min(0.01).max(MAX_FOLLOW_UP_DAYS).optional(),
+        note: z.string().trim().min(FOLLOW_UP_NOTE_MIN).max(FOLLOW_UP_NOTE_MAX).describe("Required: why it is later and what to do on that day (e.g. \"Reconnect after their Q1 budget is set; send the pricing deck and ask for a call\"). It is shown to the team on the record and, when the day comes, the AI drafts the follow-up from it."),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -984,7 +986,7 @@ function registerAllCrmTools(server: McpServer) {
         if (!at) throw new CrmToolError("Give `until` or `days`.");
         const problem = followUpDateError(at);
         if (problem) throw new CrmToolError(problem);
-        await scheduleFollowUpOn({ recordId: input.recordId, at, actorRef: caller.actorRef });
+        await scheduleFollowUpOn({ recordId: input.recordId, at, note: input.note, actorRef: caller.actorRef });
         return { recordId: input.recordId, followUpAt: at.toISOString() };
       }),
   );

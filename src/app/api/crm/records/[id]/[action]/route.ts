@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { crmOperationErrorResponse } from "@/lib/crm/api";
-import { assertExactKeys, assertObject, parseRequiredText, parseUuid, readCrmJson } from "@/lib/crm/categories";
+import { assertExactKeys, assertObject, CrmConfigurationValidationError, parseRequiredText, parseUuid, readCrmJson } from "@/lib/crm/categories";
+import { FOLLOW_UP_NOTE_MAX, followUpNoteError } from "@/lib/crm/followUpNote";
 import { requireCrmMutationContext } from "@/lib/crm/http";
 import { closeCrmRecord, reopenCrmRecord, scheduleFollowUpOn } from "@/lib/crm/operations";
 import { pauseSequence, resumeSequence, skipCurrentSequenceStep, snoozeSequence } from "@/lib/crm/sequences";
@@ -24,9 +25,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return Response.json({ record: await snoozeSequence({ recordId, until: new Date(value.until) }) });
       }
       if (action === "follow-up") {
-        assertExactKeys(value, ["at"]);
+        assertExactKeys(value, ["at", "note"]);
         if (typeof value.at !== "string") throw new Error("at must be an ISO timestamp");
-        return Response.json({ record: await scheduleFollowUpOn({ recordId, at: new Date(value.at) }) });
+        const note = parseRequiredText(value.note, "note", FOLLOW_UP_NOTE_MAX);
+        const noteProblem = followUpNoteError(note);
+        if (noteProblem) throw new CrmConfigurationValidationError(noteProblem);
+        return Response.json({ record: await scheduleFollowUpOn({ recordId, at: new Date(value.at), note }) });
       }
       if (action === "close") {
         assertExactKeys(value, ["reason"]);

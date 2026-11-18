@@ -204,6 +204,7 @@ export default function CrmRecordClient({ recordId, variant = "page" }: { record
   const name = displayName({ ...data, person });
   const avatarUrl = person.profilePictureUrl ? String(person.profilePictureUrl) : null;
   const channels = [...new Set([...conversations, ...messages].map((item) => item.channel).filter(Boolean))].map(channelLabel);
+  const followUp = asObject(data.followUp);
   const lastInbound = data.lastInboundAt ? relativeDate(data.lastInboundAt).replace(" overdue", " ago") : "No reply yet";
   const nextAction = text(currentStep.name, data.nextActionAt ? relativeDate(data.nextActionAt) : "None scheduled");
   // The message being answered: the newest inbound one on any channel.
@@ -233,6 +234,7 @@ export default function CrmRecordClient({ recordId, variant = "page" }: { record
 
       {notice && <div role="status" className="flex items-center gap-2 rounded-xl bg-success-lighter px-4 py-2.5 text-paragraph-sm text-success-dark ring-1 ring-inset ring-success-light"><RiCheckLine className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1">{notice}</span><button type="button" onClick={() => setNotice("")} className="text-label-xs opacity-70 hover:opacity-100">Dismiss</button></div>}
       {error && <ErrorState message={error} onRetry={() => void load()} />}
+      {text(followUp.note) && <div className="flex items-start gap-2 rounded-xl bg-bg-weak-50 px-4 py-2.5 text-paragraph-sm text-text-sub-600 ring-1 ring-inset ring-stroke-soft-200"><RiCalendarScheduleLine className="mt-0.5 size-4 shrink-0 text-text-soft-400" aria-hidden="true" /><p className="min-w-0 flex-1"><span className="text-label-sm text-text-strong-950">Follow up {followUp.dueAt ? `on ${formatDate(followUp.dueAt)}` : "later"}:</span> {text(followUp.note)}{text(followUp.actorRef) ? <span className="text-text-soft-400"> — {text(followUp.actorRef)}</span> : null}</p></div>}
 
       <StatRow items={[
         { label: "Last reply", value: lastInbound, icon: RiReplyLine, hint: data.lastInboundAt ? formatDate(data.lastInboundAt) : undefined },
@@ -442,7 +444,7 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
           onClick={() => void onAction(`/records/${id}/skip`, {}, "POST", "Step skipped — the next one is scheduled")}
         aria-label="Skip step"><Button.Icon as={RiSkipForwardLine} /><span className="hidden sm:inline">Skip step</span></Button.Root>}
         {moveStage}
-        <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={async (at) => { await onAction(`/records/${id}/follow-up`, { at: at.toISOString() }, "POST", followUpSuccessMessage(at)); return true; }} />
+        <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={async (at, note) => { await onAction(`/records/${id}/follow-up`, { at: at.toISOString(), note }, "POST", followUpSuccessMessage(at)); return true; }} />
         <Dropdown.Root>
           <Dropdown.Trigger asChild>
             <Button.Root variant="neutral" mode="stroke" size="xsmall" title="Manage record" aria-label="Manage record"><Button.Icon as={RiMoreLine} /></Button.Root>
@@ -883,7 +885,9 @@ function EventRow({ event }: { event: Data }) {
   const meta = asObject(event.meta);
   const transition = text(from.workflowState ?? from.status ?? from.categoryKey);
   const destination = text(to.workflowState ?? to.status ?? to.categoryKey);
-  const detail = transition && destination && transition !== destination
+  const detail = type === "record.follow_up_scheduled" && text(to.note)
+    ? text(to.note)
+    : transition && destination && transition !== destination
     ? `${humanize(transition)} → ${humanize(destination)}`
     : text(meta.reason ?? meta.error ?? to.reason ?? event.error);
   const failed = type.includes("failed") || type.includes("error") || type.includes("uncertain");

@@ -63,7 +63,7 @@ Every connection carries scopes, and the assistant only sees the tools those all
 | Scope | Lets the assistant | Tools |
 |---|---|---|
 | `crm:read` (always) | See the queue and every lead record (conversations, details, calls), and the team's writing instructions and Knowledge | `crm_list_records`, `crm_get_record`, `crm_get_call`, `crm_list_stages`, `crm_get_writing_guide`, `crm_get_knowledge` |
-| `crm:write` | Edit and rewrite drafts, write new ones, confirm or correct classifications, move stages, snooze, schedule a follow-up for a date, discard (close) or reopen, set Do Not Contact | `crm_update_draft`, `crm_regenerate_draft`, `crm_write_draft`, `crm_discard_draft`, `crm_review_classification`, `crm_move_stage`, `crm_snooze`, `crm_schedule_follow_up`, `crm_close_record`, `crm_set_do_not_contact` |
+| `crm:write` | Edit and rewrite drafts, write new ones, confirm or correct classifications, move stages, snooze, schedule a follow-up for a date (with a note, which the AI drafts the follow-up from when the day comes), discard (close) or reopen, set Do Not Contact | `crm_update_draft`, `crm_regenerate_draft`, `crm_write_draft`, `crm_discard_draft`, `crm_review_classification`, `crm_move_stage`, `crm_snooze`, `crm_schedule_follow_up`, `crm_close_record`, `crm_set_do_not_contact` |
 | `crm:send` | Send messages to leads by email, LinkedIn or WhatsApp | `crm_send_draft` |
 
 When you connect, the consent screen lists what the app asked for. Untick **Work the CRM** or **Send messages** to give it less. For example, a read-only assistant can summarise and draft in the chat but cannot change or send anything. API keys get the same choice when they are created.

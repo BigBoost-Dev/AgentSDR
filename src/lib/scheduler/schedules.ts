@@ -20,6 +20,7 @@ export type PlatformJobName =
   | "linkedin-run-search-queue"
   | "linkedin-replay-webhooks"
   | "crm-auto-follow-ups"
+  | "crm-due-follow-up-drafts"
   | "history-prune";
 
 export type PlatformJob = {
@@ -67,6 +68,12 @@ export const PLATFORM_JOBS: readonly PlatformJob[] = [
     schedule: everyMinutes(5),
     enabled: true,
     description: "Automatic CRM follow-ups, one per sending account at a time (sequences with automatic follow-ups on)",
+  },
+  {
+    name: "crm-due-follow-up-drafts",
+    schedule: everyMinutes(5),
+    enabled: true,
+    description: "Draft the follow-ups reps scheduled (Follow up later) once their date comes, from the rep's note",
   },
   {
     name: "history-prune",

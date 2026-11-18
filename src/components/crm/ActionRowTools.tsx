@@ -21,6 +21,7 @@ import * as Modal from "@/components/alignui/modal";
 import * as Select from "@/components/alignui/select";
 import { cn } from "@/utils/cn";
 import { dangerButtonClass, fieldClass, primaryButtonClass, secondaryButtonClass, subtleButtonClass } from "./CrmLayout";
+import { followUpNoteError, FOLLOW_UP_NOTE_MAX } from "@/lib/crm/followUpNote";
 import { daysBetween, followUpDateError, followUpDueIn, followUpDueOn, FOLLOW_UP_PRESETS, MAX_FOLLOW_UP_DAYS, toDateInputValue } from "@/lib/crm/followUpDate";
 import { asList, asObject, CATEGORY_COLOR, categoryColor, formatDate } from "./crm-utils";
 
@@ -407,15 +408,17 @@ export function FollowUpDialog({ open, onOpenChange, onSubmit }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Resolves true when the follow-up was set; the dialog closes itself then. */
-  onSubmit: (at: Date) => Promise<boolean>;
+  onSubmit: (at: Date, note: string) => Promise<boolean>;
 }) {
   const [at, setAt] = useState<Date>(() => followUpDueIn(7));
   const [working, setWorking] = useState(false);
+  const [note, setNote] = useState("");
   // The days box keeps its own text, so it can be emptied while typing "45"
   // instead of snapping back to the old number.
   const [daysText, setDaysText] = useState("7");
-  useEffect(() => { if (open) { setAt(followUpDueIn(7)); setDaysText("7"); setWorking(false); } }, [open]);
+  useEffect(() => { if (open) { setAt(followUpDueIn(7)); setDaysText("7"); setNote(""); setWorking(false); } }, [open]);
   const error = followUpDateError(at);
+  const noteError = followUpNoteError(note);
   const days = daysBetween(at);
   const pick = (due: Date) => { setAt(due); setDaysText(String(daysBetween(due))); };
   const setDays = (value: string) => {
@@ -424,9 +427,9 @@ export function FollowUpDialog({ open, onOpenChange, onSubmit }: {
     if (value.trim() && Number.isInteger(n) && n > 0) setAt(followUpDueIn(n));
   };
   const submit = async () => {
-    if (error || working) return;
+    if (error || noteError || working) return;
     setWorking(true);
-    const ok = await onSubmit(at);
+    const ok = await onSubmit(at, note.trim());
     setWorking(false);
     if (ok) onOpenChange(false);
   };
@@ -458,10 +461,15 @@ export function FollowUpDialog({ open, onOpenChange, onSubmit }: {
           <p className={cn("text-paragraph-sm", error ? "text-error-base" : "text-text-sub-600")}>
             {error ?? `Back in Action required on ${new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" }).format(at)}.`}
           </p>
+          <label className="block space-y-1">
+            <span className="text-label-xs text-text-sub-600">Why later, and what should happen then?</span>
+            <textarea value={note} maxLength={FOLLOW_UP_NOTE_MAX} disabled={working} onChange={(event) => setNote(event.target.value)} placeholder="Said to reconnect after their Q1 budget is set. Send the pricing deck and ask for a call." className={cn(fieldClass, "min-h-24 resize-y leading-6")} />
+            <span className="block text-paragraph-xs text-text-soft-400">The team sees this on the record, and the AI drafts the follow-up from it that day.</span>
+          </label>
         </Modal.Body>
         <Modal.Footer>
           <Modal.Close asChild><button type="button" className={secondaryButtonClass} disabled={working}>Cancel</button></Modal.Close>
-          <button type="button" className={primaryButtonClass} disabled={Boolean(error) || working} onClick={() => void submit()}>
+          <button type="button" className={primaryButtonClass} disabled={Boolean(error) || Boolean(noteError) || working} onClick={() => void submit()}>
             <RiCalendarScheduleLine className="size-4" aria-hidden="true" />{working ? "Saving…" : "Set follow-up"}
           </button>
         </Modal.Footer>

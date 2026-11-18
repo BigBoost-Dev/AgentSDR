@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { isPersonDoNotContact } from "./policies";
 import { followUpDateError } from "./followUpDate";
+import { followUpNoteError } from "./followUpNote";
 import { assertWorkflowTransition } from "./stateMachine";
 import { appendCrmEvent } from "./events";
 import {
@@ -372,10 +373,15 @@ export async function closeCrmRecord(input: {
 export async function scheduleFollowUpOn(input: {
   recordId: string;
   at: Date;
+  /** Why it is later and what to do on the day; shown to the team and used to draft the follow-up. */
+  note: string;
   actorRef?: string | null;
 }) {
   const dateError = followUpDateError(input.at);
   if (dateError) throw new CrmConflictError(dateError);
+  const note = input.note.trim();
+  const noteError = followUpNoteError(note);
+  if (noteError) throw new CrmConflictError(noteError);
   return withCrmTransaction(async (tx) => {
     const record = await lockCrmRecord(tx, input.recordId);
     if (record.workflowState === "closed") throw new CrmConflictError("Reopen the lead first");
@@ -408,7 +414,7 @@ export async function scheduleFollowUpOn(input: {
       actorType: "authenticated_operator",
       actorRef: input.actorRef,
       fromData: { workflowState: record.workflowState, nextActionAt: record.nextActionAt },
-      toData: { dueAt: input.at.toISOString() },
+      toData: { dueAt: input.at.toISOString(), note },
       contextVersion: nextContextVersion,
     });
     return updated!;

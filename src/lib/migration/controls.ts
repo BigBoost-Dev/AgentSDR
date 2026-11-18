@@ -18,6 +18,7 @@ export type MigrationControl =
   | "linkedinOutbound"
   | "whatsappOutbound"
   | "crmAutoSend"
+  | "crmFollowUpDrafts"
   | "linkedinResolution"
   | "linkedinSearch"
   | "gridWorker"
@@ -29,6 +30,8 @@ const CONTROL_ENV: Record<MigrationControl, string> = {
   whatsappOutbound: "PAUSE_WHATSAPP_OUTBOUND",
   /** Automatic CRM follow-ups (src/lib/crm/autoFollowUps.ts); drafts wait until it is lifted. */
   crmAutoSend: "PAUSE_CRM_AUTOSEND",
+  /** Drafting the follow-ups reps scheduled once they come due (src/lib/crm/dueFollowUpDrafts.ts); no model calls while paused. */
+  crmFollowUpDrafts: "PAUSE_CRM_FOLLOWUP_DRAFTS",
   linkedinResolution: "PAUSE_LINKEDIN_RESOLUTION",
   linkedinSearch: "PAUSE_LINKEDIN_SEARCH",
   gridWorker: "PAUSE_GRID_WORKER",
