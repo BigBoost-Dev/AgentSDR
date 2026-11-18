@@ -935,7 +935,8 @@ CREATE TABLE public.api_keys (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     last_used_at timestamp with time zone,
-    revoked_at timestamp with time zone
+    revoked_at timestamp with time zone,
+    scopes text[]
 );
 
 --
@@ -966,8 +967,8 @@ CREATE TABLE public.call_campaign_contacts (
     ai_note text,
     ai_booked_at timestamp with time zone,
     ai_instructions text,
-    ai_meeting_at timestamp with time zone,
     ai_booking_code text,
+    ai_meeting_at timestamp with time zone,
     CONSTRAINT call_campaign_contacts_ai_status_chk CHECK (((ai_status IS NULL) OR (ai_status = ANY (ARRAY['queued'::text, 'reaching'::text, 'callback'::text, 'chasing'::text, 'booked'::text, 'handoff'::text, 'not_interested'::text, 'unreached'::text, 'replied'::text, 'stopped'::text, 'failed'::text])))),
     CONSTRAINT call_campaign_contacts_call_count_chk CHECK ((call_count >= 0)),
     CONSTRAINT call_campaign_contacts_call_status_chk CHECK ((call_status = ANY (ARRAY['new'::text, 'calling'::text, 'no_answer'::text, 'busy'::text, 'connected'::text, 'not_on_whatsapp'::text, 'wrong_number'::text, 'failed'::text]))),
@@ -1031,8 +1032,11 @@ CREATE TABLE public.call_campaigns (
     ai_max_callbacks integer DEFAULT 2 NOT NULL,
     ai_launched_at timestamp with time zone,
     ai_knowledge_ids uuid[],
+    ai_voice_engine text DEFAULT 'gemini'::text NOT NULL,
+    ai_elevenlabs_voice text,
     CONSTRAINT call_campaigns_ai_goal_chk CHECK ((ai_goal = ANY (ARRAY['book_meeting'::text, 'human_callback'::text, 'either'::text]))),
     CONSTRAINT call_campaigns_ai_max_callbacks_chk CHECK (((ai_max_callbacks >= 0) AND (ai_max_callbacks <= 3))),
+    CONSTRAINT call_campaigns_ai_voice_engine_check CHECK ((ai_voice_engine = ANY (ARRAY['gemini'::text, 'elevenlabs'::text]))),
     CONSTRAINT call_campaigns_name_chk CHECK ((length(btrim(name)) > 0)),
     CONSTRAINT call_campaigns_run_by_chk CHECK ((run_by = ANY (ARRAY['rep'::text, 'ai'::text]))),
     CONSTRAINT call_campaigns_status_chk CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text])))
@@ -1557,6 +1561,34 @@ CREATE TABLE public.crm_leads (
 );
 
 --
+-- Name: crm_meetings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crm_meetings (
+    organization_id uuid NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    crm_record_id uuid NOT NULL,
+    person_id uuid NOT NULL,
+    provider text DEFAULT 'calcom'::text NOT NULL,
+    provider_booking_uid text,
+    status text DEFAULT 'booked'::text NOT NULL,
+    start_at timestamp with time zone NOT NULL,
+    end_at timestamp with time zone NOT NULL,
+    booked_at timestamp with time zone DEFAULT now() NOT NULL,
+    cancelled_at timestamp with time zone,
+    outcome text,
+    outcome_at timestamp with time zone,
+    outcome_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT crm_meetings_outcome_at_chk CHECK (((outcome IS NULL) = (outcome_at IS NULL))),
+    CONSTRAINT crm_meetings_outcome_chk CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['showed'::text, 'no_show'::text])))),
+    CONSTRAINT crm_meetings_provider_chk CHECK ((provider = 'calcom'::text)),
+    CONSTRAINT crm_meetings_status_chk CHECK ((status = ANY (ARRAY['booked'::text, 'cancelled'::text]))),
+    CONSTRAINT crm_meetings_time_chk CHECK ((end_at >= start_at))
+);
+
+--
 -- Name: crm_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1666,6 +1698,9 @@ CREATE TABLE public.crm_records (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     organization_id uuid NOT NULL,
+    booking_code text,
+    booking_link_first_sent_at timestamp with time zone,
+    booking_link_sent_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT crm_records_active_channel_chk CHECK (((active_channel IS NULL) OR (active_channel = ANY (ARRAY['email'::text, 'linkedin'::text, 'whatsapp'::text])))),
     CONSTRAINT crm_records_category_lock_chk CHECK (((category_locked IS FALSE) OR (NOT (category_key IS DISTINCT FROM 'customer'::text)))),
     CONSTRAINT crm_records_category_source_chk CHECK (((category_source IS NULL) OR (category_source = ANY (ARRAY['ai'::text, 'human'::text, 'integration'::text])))),
@@ -1783,11 +1818,15 @@ CREATE TABLE public.crm_sequence_steps (
     knowledge_tags text[] DEFAULT '{}'::text[] NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    timing text DEFAULT 'after_previous'::text NOT NULL,
+    channel text DEFAULT 'same'::text NOT NULL,
     CONSTRAINT crm_sequence_steps_ai_instructions_chk CHECK ((length(btrim(ai_instructions)) > 0)),
+    CONSTRAINT crm_sequence_steps_channel_chk CHECK (((channel = ANY (ARRAY['same'::text, 'other'::text])) AND (("position" > 1) OR (channel = 'same'::text)))),
     CONSTRAINT crm_sequence_steps_delay_chk CHECK ((delay_minutes >= 0)),
     CONSTRAINT crm_sequence_steps_name_chk CHECK ((length(btrim(name)) > 0)),
     CONSTRAINT crm_sequence_steps_position_chk CHECK (("position" > 0)),
-    CONSTRAINT crm_sequence_steps_semantics_chk CHECK (((("position" = 1) AND (step_type = 'reply'::text) AND (delay_minutes = 0)) OR (("position" > 1) AND (step_type = 'follow_up'::text))))
+    CONSTRAINT crm_sequence_steps_semantics_chk CHECK (((("position" = 1) AND (step_type = 'reply'::text) AND (delay_minutes = 0)) OR (("position" > 1) AND (step_type = 'follow_up'::text)))),
+    CONSTRAINT crm_sequence_steps_timing_chk CHECK (((timing = ANY (ARRAY['after_previous'::text, 'before_meeting'::text])) AND (("position" > 1) OR (timing = 'after_previous'::text))))
 );
 
 --
@@ -1822,6 +1861,8 @@ CREATE TABLE public.crm_sequences (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     organization_id uuid NOT NULL,
     auto_send_follow_ups boolean DEFAULT false NOT NULL,
+    auto_send_reply boolean DEFAULT false NOT NULL,
+    then_sequence_id uuid,
     CONSTRAINT crm_sequences_name_chk CHECK ((length(btrim(name)) > 0)),
     CONSTRAINT crm_sequences_status_chk CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
 );
@@ -1841,6 +1882,8 @@ CREATE TABLE public.crm_settings (
     draft_instructions jsonb,
     classification_instructions jsonb,
     calling_instructions jsonb,
+    booking_url text,
+    CONSTRAINT crm_settings_booking_url_chk CHECK (((booking_url IS NULL) OR ((booking_url ~ '^https?://'::text) AND (length(booking_url) <= 2000)))),
     CONSTRAINT crm_settings_calling_instructions_shape_chk CHECK (((calling_instructions IS NULL) OR ((jsonb_typeof(calling_instructions) = 'array'::text) AND (length((calling_instructions)::text) <= 60000)))),
     CONSTRAINT crm_settings_confidence_chk CHECK (((auto_apply_confidence >= (0)::numeric) AND (auto_apply_confidence <= (1)::numeric))),
     CONSTRAINT crm_settings_human_send_only_chk CHECK ((human_send_only IS TRUE)),
@@ -2314,6 +2357,20 @@ CREATE TABLE public.invitations (
 );
 
 --
+-- Name: jwks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jwks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    public_key text NOT NULL,
+    private_key text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone,
+    alg text,
+    crv text
+);
+
+--
 -- Name: members; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2323,6 +2380,155 @@ CREATE TABLE public.members (
     user_id uuid NOT NULL,
     role text DEFAULT 'member'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: oauth_access_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_access_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token text,
+    client_id text NOT NULL,
+    session_id uuid,
+    user_id uuid,
+    reference_id text,
+    authorization_code_id text,
+    resources text[],
+    requested_user_info_claims text[],
+    refresh_id uuid,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone,
+    revoked timestamp with time zone,
+    confirmation jsonb,
+    scopes text[] NOT NULL
+);
+
+--
+-- Name: oauth_client_assertions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_client_assertions (
+    id text NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+--
+-- Name: oauth_client_resources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_client_resources (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    client_id text NOT NULL,
+    resource_id text NOT NULL,
+    metadata jsonb,
+    created_at timestamp with time zone
+);
+
+--
+-- Name: oauth_clients; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_clients (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    client_id text NOT NULL,
+    client_secret text,
+    client_discovery_id text,
+    disabled boolean DEFAULT false,
+    skip_consent boolean,
+    enable_end_session boolean,
+    subject_type text,
+    scopes text[],
+    client_credentials_scopes text[] DEFAULT '{}'::text[],
+    user_id uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    name text,
+    uri text,
+    icon text,
+    contacts text[],
+    tos text,
+    policy text,
+    software_id text,
+    software_version text,
+    software_statement text,
+    redirect_uris text[] NOT NULL,
+    post_logout_redirect_uris text[],
+    backchannel_logout_uri text,
+    backchannel_logout_session_required boolean,
+    token_endpoint_auth_method text,
+    application_type text,
+    jwks text,
+    jwks_uri text,
+    grant_types text[],
+    response_types text[],
+    require_pkce boolean,
+    dpop_bound_access_tokens boolean DEFAULT false,
+    reference_id text,
+    metadata jsonb
+);
+
+--
+-- Name: oauth_consents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_consents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    client_id text NOT NULL,
+    user_id uuid,
+    reference_id text,
+    resources text[],
+    requested_user_info_claims text[],
+    scopes text[] NOT NULL,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone
+);
+
+--
+-- Name: oauth_refresh_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_refresh_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token text NOT NULL,
+    client_id text NOT NULL,
+    session_id uuid,
+    user_id uuid NOT NULL,
+    reference_id text,
+    authorization_code_id text,
+    resources text[],
+    requested_user_info_claims text[],
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone,
+    revoked timestamp with time zone,
+    rotated_at timestamp with time zone,
+    rotation_replay_response text,
+    rotation_replay_expires_at timestamp with time zone,
+    auth_time timestamp with time zone,
+    confirmation jsonb,
+    scopes text[] NOT NULL
+);
+
+--
+-- Name: oauth_resources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_resources (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    identifier text NOT NULL,
+    name text NOT NULL,
+    access_token_ttl integer,
+    refresh_token_ttl integer,
+    signing_algorithm text,
+    signing_key_id text,
+    allowed_scopes text[],
+    custom_claims jsonb,
+    dpop_bound_access_tokens_required boolean DEFAULT false,
+    disabled boolean DEFAULT false,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    policy_version integer DEFAULT 1,
+    metadata jsonb
 );
 
 --
@@ -2866,25 +3072,25 @@ ALTER TABLE ONLY public.call_campaign_contacts
     ADD CONSTRAINT call_campaign_contacts_pkey PRIMARY KEY (id);
 
 --
+-- Name: call_campaign_stations call_campaign_stations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.call_campaign_stations
+    ADD CONSTRAINT call_campaign_stations_pkey PRIMARY KEY (campaign_id, station_id);
+
+--
 -- Name: call_campaign_step_runs call_campaign_step_runs_contact_step_uq; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.call_campaign_step_runs
-    ADD CONSTRAINT call_campaign_step_runs_contact_step_uq UNIQUE (contact_id, step_key);;
+    ADD CONSTRAINT call_campaign_step_runs_contact_step_uq UNIQUE (contact_id, step_key);
 
 --
 -- Name: call_campaign_step_runs call_campaign_step_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.call_campaign_step_runs
-    ADD CONSTRAINT call_campaign_step_runs_pkey PRIMARY KEY (id);;
-
---
--- Name: call_campaign_stations call_campaign_stations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.call_campaign_stations
-    ADD CONSTRAINT call_campaign_stations_pkey PRIMARY KEY (campaign_id, station_id);;
+    ADD CONSTRAINT call_campaign_step_runs_pkey PRIMARY KEY (id);
 
 --
 -- Name: call_campaigns call_campaigns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3130,6 +3336,13 @@ ALTER TABLE ONLY public.crm_lead_ccs
 
 ALTER TABLE ONLY public.crm_leads
     ADD CONSTRAINT crm_leads_pkey PRIMARY KEY (id);
+
+--
+-- Name: crm_meetings crm_meetings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crm_meetings
+    ADD CONSTRAINT crm_meetings_pkey PRIMARY KEY (id);
 
 --
 -- Name: crm_messages crm_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3461,11 +3674,95 @@ ALTER TABLE ONLY public.invitations
     ADD CONSTRAINT invitations_pkey PRIMARY KEY (id);
 
 --
+-- Name: jwks jwks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jwks
+    ADD CONSTRAINT jwks_pkey PRIMARY KEY (id);
+
+--
 -- Name: members members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.members
     ADD CONSTRAINT members_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_access_tokens oauth_access_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_access_tokens oauth_access_tokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_token_key UNIQUE (token);
+
+--
+-- Name: oauth_client_assertions oauth_client_assertions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_client_assertions
+    ADD CONSTRAINT oauth_client_assertions_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_client_resources oauth_client_resources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_client_resources
+    ADD CONSTRAINT oauth_client_resources_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_clients oauth_clients_client_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_clients
+    ADD CONSTRAINT oauth_clients_client_id_key UNIQUE (client_id);
+
+--
+-- Name: oauth_clients oauth_clients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_clients
+    ADD CONSTRAINT oauth_clients_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_consents oauth_consents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_consents
+    ADD CONSTRAINT oauth_consents_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_refresh_tokens oauth_refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_pkey PRIMARY KEY (id);
+
+--
+-- Name: oauth_refresh_tokens oauth_refresh_tokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_token_key UNIQUE (token);
+
+--
+-- Name: oauth_resources oauth_resources_identifier_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_resources
+    ADD CONSTRAINT oauth_resources_identifier_key UNIQUE (identifier);
+
+--
+-- Name: oauth_resources oauth_resources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_resources
+    ADD CONSTRAINT oauth_resources_pkey PRIMARY KEY (id);
 
 --
 -- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3577,14 +3874,14 @@ ALTER TABLE ONLY public.sessions
 --
 
 ALTER TABLE ONLY public.station_message_jobs
-    ADD CONSTRAINT station_message_jobs_message_uq UNIQUE (whatsapp_message_id);;
+    ADD CONSTRAINT station_message_jobs_message_uq UNIQUE (whatsapp_message_id);
 
 --
 -- Name: station_message_jobs station_message_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.station_message_jobs
-    ADD CONSTRAINT station_message_jobs_pkey PRIMARY KEY (id);;
+    ADD CONSTRAINT station_message_jobs_pkey PRIMARY KEY (id);
 
 --
 -- Name: targeted_domains targeted_domains_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3899,6 +4196,12 @@ CREATE INDEX call_campaign_contacts_ai_due_idx ON public.call_campaign_contacts 
 CREATE INDEX call_campaign_contacts_campaign_stage_idx ON public.call_campaign_contacts USING btree (campaign_id, stage);
 
 --
+-- Name: call_campaign_stations_station_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX call_campaign_stations_station_idx ON public.call_campaign_stations USING btree (station_id);
+
+--
 -- Name: call_campaign_step_runs_call_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3915,12 +4218,6 @@ CREATE INDEX call_campaign_step_runs_message_idx ON public.call_campaign_step_ru
 --
 
 CREATE INDEX call_campaign_step_runs_open_idx ON public.call_campaign_step_runs USING btree (status) WHERE (status = 'started'::text);
-
---
--- Name: call_campaign_stations_station_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX call_campaign_stations_station_idx ON public.call_campaign_stations USING btree (station_id);
 
 --
 -- Name: call_campaigns_organization_idx; Type: INDEX; Schema: public; Owner: -
@@ -4133,6 +4430,30 @@ CREATE UNIQUE INDEX crm_leads_org_email_uq ON public.crm_leads USING btree (orga
 CREATE INDEX crm_leads_organization_idx ON public.crm_leads USING btree (organization_id);
 
 --
+-- Name: crm_meetings_open_end_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX crm_meetings_open_end_idx ON public.crm_meetings USING btree (end_at) WHERE ((status = 'booked'::text) AND (outcome IS NULL));
+
+--
+-- Name: crm_meetings_organization_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX crm_meetings_organization_idx ON public.crm_meetings USING btree (organization_id);
+
+--
+-- Name: crm_meetings_provider_uid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX crm_meetings_provider_uid_uq ON public.crm_meetings USING btree (provider, provider_booking_uid) WHERE (provider_booking_uid IS NOT NULL);
+
+--
+-- Name: crm_meetings_record_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX crm_meetings_record_idx ON public.crm_meetings USING btree (crm_record_id);
+
+--
 -- Name: crm_messages_provider_id_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4179,6 +4500,12 @@ CREATE UNIQUE INDEX crm_record_sequence_overrides_active_uq ON public.crm_record
 --
 
 CREATE INDEX crm_record_sequence_overrides_record_idx ON public.crm_record_sequence_overrides USING btree (crm_record_id);
+
+--
+-- Name: crm_records_booking_code_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX crm_records_booking_code_uq ON public.crm_records USING btree (booking_code) WHERE (booking_code IS NOT NULL);
 
 --
 -- Name: crm_records_organization_idx; Type: INDEX; Schema: public; Owner: -
@@ -4643,6 +4970,90 @@ CREATE INDEX members_organization_id_idx ON public.members USING btree (organiza
 --
 
 CREATE INDEX members_user_id_idx ON public.members USING btree (user_id);
+
+--
+-- Name: oauth_access_tokens_authorization_code_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_access_tokens_authorization_code_id_idx ON public.oauth_access_tokens USING btree (authorization_code_id);
+
+--
+-- Name: oauth_access_tokens_client_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_access_tokens_client_id_idx ON public.oauth_access_tokens USING btree (client_id);
+
+--
+-- Name: oauth_access_tokens_refresh_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_access_tokens_refresh_id_idx ON public.oauth_access_tokens USING btree (refresh_id);
+
+--
+-- Name: oauth_access_tokens_session_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_access_tokens_session_id_idx ON public.oauth_access_tokens USING btree (session_id);
+
+--
+-- Name: oauth_access_tokens_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_access_tokens_user_id_idx ON public.oauth_access_tokens USING btree (user_id);
+
+--
+-- Name: oauth_client_resources_client_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_client_resources_client_id_idx ON public.oauth_client_resources USING btree (client_id);
+
+--
+-- Name: oauth_client_resources_resource_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_client_resources_resource_id_idx ON public.oauth_client_resources USING btree (resource_id);
+
+--
+-- Name: oauth_clients_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_clients_user_id_idx ON public.oauth_clients USING btree (user_id);
+
+--
+-- Name: oauth_consents_client_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_consents_client_id_idx ON public.oauth_consents USING btree (client_id);
+
+--
+-- Name: oauth_consents_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_consents_user_id_idx ON public.oauth_consents USING btree (user_id);
+
+--
+-- Name: oauth_refresh_tokens_authorization_code_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_refresh_tokens_authorization_code_id_idx ON public.oauth_refresh_tokens USING btree (authorization_code_id);
+
+--
+-- Name: oauth_refresh_tokens_client_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_refresh_tokens_client_id_idx ON public.oauth_refresh_tokens USING btree (client_id);
+
+--
+-- Name: oauth_refresh_tokens_session_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_refresh_tokens_session_id_idx ON public.oauth_refresh_tokens USING btree (session_id);
+
+--
+-- Name: oauth_refresh_tokens_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX oauth_refresh_tokens_user_id_idx ON public.oauth_refresh_tokens USING btree (user_id);
 
 --
 -- Name: outreach_campaigns_organization_idx; Type: INDEX; Schema: public; Owner: -
@@ -5165,7 +5576,7 @@ ALTER TABLE ONLY public.api_keys
 --
 
 ALTER TABLE ONLY public.call_campaign_contacts
-    ADD CONSTRAINT call_campaign_contacts_ai_station_fk FOREIGN KEY (ai_station_id) REFERENCES public.calling_stations(id) ON DELETE SET NULL;;
+    ADD CONSTRAINT call_campaign_contacts_ai_station_fk FOREIGN KEY (ai_station_id) REFERENCES public.calling_stations(id) ON DELETE SET NULL;
 
 --
 -- Name: call_campaign_contacts call_campaign_contacts_campaign_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -5182,25 +5593,25 @@ ALTER TABLE ONLY public.call_campaign_contacts
     ADD CONSTRAINT call_campaign_contacts_person_fk FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE RESTRICT;
 
 --
--- Name: call_campaign_step_runs call_campaign_step_runs_contact_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.call_campaign_step_runs
-    ADD CONSTRAINT call_campaign_step_runs_contact_fk FOREIGN KEY (contact_id) REFERENCES public.call_campaign_contacts(id) ON DELETE CASCADE;;
-
---
 -- Name: call_campaign_stations call_campaign_stations_campaign_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.call_campaign_stations
-    ADD CONSTRAINT call_campaign_stations_campaign_fk FOREIGN KEY (campaign_id) REFERENCES public.call_campaigns(id) ON DELETE CASCADE;;
+    ADD CONSTRAINT call_campaign_stations_campaign_fk FOREIGN KEY (campaign_id) REFERENCES public.call_campaigns(id) ON DELETE CASCADE;
 
 --
 -- Name: call_campaign_stations call_campaign_stations_station_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.call_campaign_stations
-    ADD CONSTRAINT call_campaign_stations_station_fk FOREIGN KEY (station_id) REFERENCES public.calling_stations(id) ON DELETE CASCADE;;
+    ADD CONSTRAINT call_campaign_stations_station_fk FOREIGN KEY (station_id) REFERENCES public.calling_stations(id) ON DELETE CASCADE;
+
+--
+-- Name: call_campaign_step_runs call_campaign_step_runs_contact_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.call_campaign_step_runs
+    ADD CONSTRAINT call_campaign_step_runs_contact_fk FOREIGN KEY (contact_id) REFERENCES public.call_campaign_contacts(id) ON DELETE CASCADE;
 
 --
 -- Name: call_campaigns call_campaigns_organization_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -5546,6 +5957,27 @@ ALTER TABLE ONLY public.crm_leads
     ADD CONSTRAINT crm_leads_organization_fk FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE RESTRICT;
 
 --
+-- Name: crm_meetings crm_meetings_crm_record_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crm_meetings
+    ADD CONSTRAINT crm_meetings_crm_record_id_fkey FOREIGN KEY (crm_record_id) REFERENCES public.crm_records(id) ON DELETE RESTRICT;
+
+--
+-- Name: crm_meetings crm_meetings_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crm_meetings
+    ADD CONSTRAINT crm_meetings_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+--
+-- Name: crm_meetings crm_meetings_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crm_meetings
+    ADD CONSTRAINT crm_meetings_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE RESTRICT;
+
+--
 -- Name: crm_messages crm_messages_lead_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5740,6 +6172,13 @@ ALTER TABLE ONLY public.crm_sequences
 
 ALTER TABLE ONLY public.crm_sequences
     ADD CONSTRAINT crm_sequences_organization_fk FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE RESTRICT;
+
+--
+-- Name: crm_sequences crm_sequences_then_sequence_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crm_sequences
+    ADD CONSTRAINT crm_sequences_then_sequence_fk FOREIGN KEY (then_sequence_id) REFERENCES public.crm_sequences(id) ON DELETE SET NULL;
 
 --
 -- Name: crm_settings crm_settings_pipeline_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -5945,6 +6384,90 @@ ALTER TABLE ONLY public.members
     ADD CONSTRAINT members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 --
+-- Name: oauth_access_tokens oauth_access_tokens_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.oauth_clients(client_id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_access_tokens oauth_access_tokens_refresh_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_refresh_id_fkey FOREIGN KEY (refresh_id) REFERENCES public.oauth_refresh_tokens(id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_access_tokens oauth_access_tokens_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id) ON DELETE SET NULL;
+
+--
+-- Name: oauth_access_tokens oauth_access_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_access_tokens
+    ADD CONSTRAINT oauth_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_client_resources oauth_client_resources_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_client_resources
+    ADD CONSTRAINT oauth_client_resources_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.oauth_clients(client_id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_client_resources oauth_client_resources_resource_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_client_resources
+    ADD CONSTRAINT oauth_client_resources_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES public.oauth_resources(identifier) ON DELETE CASCADE;
+
+--
+-- Name: oauth_clients oauth_clients_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_clients
+    ADD CONSTRAINT oauth_clients_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_consents oauth_consents_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_consents
+    ADD CONSTRAINT oauth_consents_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.oauth_clients(client_id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_consents oauth_consents_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_consents
+    ADD CONSTRAINT oauth_consents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_refresh_tokens oauth_refresh_tokens_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.oauth_clients(client_id) ON DELETE CASCADE;
+
+--
+-- Name: oauth_refresh_tokens oauth_refresh_tokens_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id) ON DELETE SET NULL;
+
+--
+-- Name: oauth_refresh_tokens oauth_refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+--
 -- Name: outreach_campaigns outreach_campaigns_organization_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6036,25 +6559,25 @@ ALTER TABLE ONLY public.qualification_jobs
     ADD CONSTRAINT qualification_jobs_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 --
+-- Name: sessions sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+--
 -- Name: station_message_jobs station_message_jobs_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.station_message_jobs
-    ADD CONSTRAINT station_message_jobs_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id);;
+    ADD CONSTRAINT station_message_jobs_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
 
 --
 -- Name: station_message_jobs station_message_jobs_station_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.station_message_jobs
-    ADD CONSTRAINT station_message_jobs_station_fk FOREIGN KEY (station_id) REFERENCES public.calling_stations(id) ON DELETE CASCADE;;
-
---
--- Name: sessions sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+    ADD CONSTRAINT station_message_jobs_station_fk FOREIGN KEY (station_id) REFERENCES public.calling_stations(id) ON DELETE CASCADE;
 
 --
 -- Name: targeted_domains targeted_domains_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -

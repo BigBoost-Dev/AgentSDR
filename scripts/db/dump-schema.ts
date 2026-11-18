@@ -37,6 +37,9 @@ function normalize(dump: string): string {
     if (/^\\(un)?restrict /.test(line)) return false;
     if (/^-- Dumped (from database|by pg_dump) version/.test(line)) return false;
     if (/^SET transaction_timeout/.test(line)) return false;
+    // A column option the production host stamps on new columns; stock
+    // PostgreSQL rejects it ("unrecognized parameter").
+    if (/ALTER COLUMN \S+ SET \(pg_attver=\d+\);$/.test(line)) return false;
     return true;
   });
   // Every database already has `public`; keep the statement but make it idempotent.

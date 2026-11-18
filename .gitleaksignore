@@ -5,3 +5,5 @@ scripts/backfill-campaign-people.ts:linkedin-client-secret:322
 src/lib/platform/clients.ts:private-key:26
 # A channel → pause-switch map ("linkedin: \"linkedinOutbound\""), not a secret:
 src/lib/crm/autoFollowUps.ts:linkedin-client-secret:72
+# A channel-to-pause-switch map whose "linkedin" key looks like a client secret:
+src/lib/crm/autoFollowUps.ts:linkedin-client-secret:80
