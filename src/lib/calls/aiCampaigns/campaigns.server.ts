@@ -259,6 +259,8 @@ async function toDetail(row: CampaignRow): Promise<AiCampaignDetail> {
     instructions: row.aiInstructions,
     agentName: row.aiAgentName,
     agentVoice: row.aiAgentVoice,
+    voiceEngine: row.aiVoiceEngine,
+    elevenlabsVoice: row.aiElevenlabsVoice,
     bookingUrl: row.aiBookingUrl,
     bookingMessage: row.aiBookingMessage ?? DEFAULT_BOOKING_MESSAGE,
     maxCallbacks: row.aiMaxCallbacks,
@@ -300,6 +302,8 @@ const UPDATE_KEYS = [
   "instructions",
   "agentName",
   "agentVoice",
+  "voiceEngine",
+  "elevenlabsVoice",
   "bookingUrl",
   "bookingMessage",
   "maxCallbacks",
@@ -333,6 +337,15 @@ export function parseUpdateAiCampaignRequest(value: unknown): UpdateAiCampaignRe
   }
   if (body.agentName !== undefined) request.agentName = parseAgentName(body.agentName);
   if (body.agentVoice !== undefined) request.agentVoice = parseAgentVoice(body.agentVoice);
+  if (body.voiceEngine !== undefined) {
+    if (body.voiceEngine !== "gemini" && body.voiceEngine !== "elevenlabs") throw new CallApiError(400, "voiceEngine must be gemini or elevenlabs");
+    request.voiceEngine = body.voiceEngine;
+  }
+  if (body.elevenlabsVoice !== undefined) {
+    if (body.elevenlabsVoice === null || body.elevenlabsVoice === "") request.elevenlabsVoice = null;
+    else if (typeof body.elevenlabsVoice !== "string" || !/^[A-Za-z0-9]{10,40}$/.test(body.elevenlabsVoice)) throw new CallApiError(400, "elevenlabsVoice must be an ElevenLabs voice id");
+    else request.elevenlabsVoice = body.elevenlabsVoice;
+  }
   if (body.bookingUrl !== undefined) {
     if (body.bookingUrl === null || body.bookingUrl === "") request.bookingUrl = null;
     else {
@@ -433,6 +446,8 @@ export async function updateAiCampaign(campaignId: string, input: UpdateAiCampai
   }
   if (input.agentName !== undefined) updates.aiAgentName = input.agentName;
   if (input.agentVoice !== undefined) updates.aiAgentVoice = input.agentVoice;
+  if (input.voiceEngine !== undefined) updates.aiVoiceEngine = input.voiceEngine;
+  if (input.elevenlabsVoice !== undefined) updates.aiElevenlabsVoice = input.elevenlabsVoice;
 
   if (input.steps !== undefined || input.chaseSteps !== undefined) {
     const steps = input.steps ?? row.aiSteps;

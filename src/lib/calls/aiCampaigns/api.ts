@@ -80,6 +80,8 @@ export type UpdateAiCampaignRequest = {
   instructions?: string;
   agentName?: string | null;
   agentVoice?: string | null;
+  voiceEngine?: "gemini" | "elevenlabs";
+  elevenlabsVoice?: string | null;
   bookingUrl?: string | null;
   bookingMessage?: string;
   maxCallbacks?: number;

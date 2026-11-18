@@ -5,8 +5,13 @@ import { getPromptTemplate } from "@/lib/observability/langfuse";
 import { traceGeneration } from "@/lib/observability/langfuse";
 import { fillPrompt } from "@/lib/prompts/template";
 import { currentOrganizationId } from "@/lib/tenancy/scope";
-import { AGENT_OUTCOMES } from "../contract";
-import { agentInstructions, resolveLiveSetupTemplates } from "../liveAgent";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { inOrg } from "@/lib/tenancy/scope";
+import { AGENT_OUTCOMES, type AgentTokenRequest, type AgentTokenResponse, type ElevenLabsCallSession } from "../contract";
+import { loadAgentContext, loadCampaignKnowledgeIds } from "../agentContext";
+import { agentInstructions, agentKnowledge, callNotes, resolveLiveSetupTemplates, saveHeardAudio } from "../liveAgent";
+import { callCampaignContacts, callCampaigns, type callSessions } from "../schema";
 import type { Rehearsal } from "../rehearsal";
 import { CallApiError } from "../sessions";
 import {
@@ -199,6 +204,69 @@ export async function ensureElevenLabsAgent(mode: ElevenLabsMode): Promise<strin
   return agentId;
 }
 
+/** A signed conversation for the organization's `mode` agent, with the overrides that make it this call. */
+async function conversation(system: string, firstMessage: string, mode: ElevenLabsMode, voice: string): Promise<ElevenLabsCallSession> {
+  const key = await credentials();
+  const agentId = await ensureElevenLabsAgent(mode);
+  const { signed_url: signedUrl } = await api<{ signed_url: string }>(key, "GET", `/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`);
+  return { signedUrl, override: { agent: { prompt: { prompt: system }, first_message: firstMessage, language: "en" }, tts: { voice_id: voice } } };
+}
+
+/** Who talks on a call: its AI campaign's voice engine (Gemini when it has none, e.g. a call placed by hand). */
+export async function callVoiceEngine(campaignContactId: string | null): Promise<{ engine: "gemini" | "elevenlabs"; voice: string | null }> {
+  if (!campaignContactId) return { engine: "gemini", voice: null };
+  const [row] = await db
+    .select({ engine: callCampaigns.aiVoiceEngine, voice: callCampaigns.aiElevenlabsVoice })
+    .from(callCampaignContacts)
+    .innerJoin(callCampaigns, eq(callCampaigns.id, callCampaignContacts.campaignId))
+    .where(and(inOrg(callCampaigns), eq(callCampaignContacts.id, campaignContactId)))
+    .limit(1);
+  return row ? { engine: row.engine, voice: row.voice } : { engine: "gemini", voice: null };
+}
+
+/**
+ * The agent session of a real call whose campaign talks through ElevenLabs:
+ * the same system prompt mintAgentToken builds for Gemini (the campaign's
+ * knowledge, the lead's history, the time, the calling instructions), in
+ * ElevenLabs' realtime mode. On a call-back the agent says nothing first and
+ * answers the caller's hello, as the calling instructions describe.
+ */
+export async function mintElevenLabsCallToken(
+  row: typeof callSessions.$inferSelect,
+  request: AgentTokenRequest,
+  voice: string | null,
+): Promise<AgentTokenResponse> {
+  if (row.remoteRep) throw new CallApiError(409, "A rep talks on this call, not the AI agent");
+  if (row.status !== "pending" && row.status !== "in_progress") throw new CallApiError(409, "This call is already over");
+  const [knowledge, context, live, notes, firstMessage] = await Promise.all([
+    loadCampaignKnowledgeIds(row.campaignContactId).then((ids) => agentKnowledge(ids)),
+    loadAgentContext(row),
+    resolveLiveSetupTemplates(),
+    callNotes(),
+    getPromptTemplate("calls/elevenlabs-first-message"),
+  ]);
+  const system = agentInstructions(request, knowledge, context, live.templates["calls/agent-system"]);
+  const firstName = request.lead?.firstName?.trim() ?? "";
+  const opening = row.direction === "inbound" || !firstName ? "" : fillPrompt(firstMessage.text, { first_name: firstName });
+  const voiceId = voice?.trim() || DEFAULT_ELEVENLABS_VOICE;
+  const session = await traceGeneration(
+    {
+      name: "call-agent-setup",
+      model: "elevenlabs-realtime",
+      input: { system, voice: voiceId, opening },
+      prompts: [...live.prompts, ...notes.prompts, firstMessage],
+      sessionId: row.id,
+      metadata: { engine: "elevenlabs", callId: row.id, personId: row.personId, campaignContactId: row.campaignContactId, direction: row.direction, knowledge: knowledge.map((document) => document.title) },
+    },
+    async (record) => {
+      const made = await conversation(system, opening, "realtime", voiceId);
+      record({ output: { engine: "elevenlabs", voice: voiceId } });
+      return made;
+    },
+  );
+  return { token: "", model: "elevenlabs-realtime", websocketUrl: "", saveHeardAudio: saveHeardAudio(), notes: notes.notes, elevenlabs: session };
+}
+
 /**
  * A rehearsal conversation: a signed URL for the organization's agent and
  * the overrides that make it this campaign's call — the system prompt a
@@ -221,22 +289,9 @@ export async function elevenLabsRehearsalSession(rehearsal: Rehearsal, mode: Ele
       metadata: { engine: "elevenlabs", knowledge: rehearsal.knowledge.map((document) => document.title) },
     },
     async (record) => {
-      const agentId = await ensureElevenLabsAgent(mode);
-      const { signed_url: signedUrl } = await api<{ signed_url: string }>(key, "GET", `/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`);
-      record({ output: { agentId } });
-      return {
-        signedUrl,
-        mode,
-        voiceId: voice,
-        override: {
-          agent: {
-            prompt: { prompt: system },
-            first_message: firstName ? fillPrompt(firstMessage.text, { first_name: firstName }) : "",
-            language: "en",
-          },
-          tts: { voice_id: voice },
-        },
-      };
+      const made = await conversation(system, firstName ? fillPrompt(firstMessage.text, { first_name: firstName }) : "", mode, voice);
+      record({ output: { mode } });
+      return { ...made, mode, voiceId: voice };
     },
   );
 }

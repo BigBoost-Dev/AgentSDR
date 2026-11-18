@@ -754,6 +754,13 @@ export type AgentTokenResponse = {
   model: string;
   websocketUrl: string;
   /**
+   * Set when the call's campaign talks through ElevenLabs' phone agent: the
+   * extension holds this conversation instead of a Gemini Live session
+   * (token, model and websocketUrl are then empty). The overrides carry the
+   * call's own system prompt, opening line and voice.
+   */
+  elevenlabs?: ElevenLabsCallSession;
+  /**
    * Test option (AGENT_SAVE_HEARD_AUDIO=true on the server): keep exactly the
    * audio sent to the model — the lead's side, 16 kHz mono — and upload it as
    * a WAV after the call (POST …/heard-audio), to hear what the AI heard.
@@ -841,4 +848,13 @@ export type RecorderCallUpdate = {
   type: "call:update";
   callId: string;
   phase: RecorderCallPhase;
+};
+
+/** One ElevenLabs conversation for a call: a signed wss URL (single use) and the overrides to send as it starts. */
+export type ElevenLabsCallSession = {
+  signedUrl: string;
+  override: {
+    agent: { prompt: { prompt: string }; first_message: string; language: string };
+    tts: { voice_id: string };
+  };
 };

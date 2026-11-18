@@ -18,7 +18,7 @@
 import type { AgentCallNotes, AgentOutcomeKind } from "../../../src/lib/calls/contract";
 import type { AgentTokenResult } from "./messages";
 
-type Handlers = {
+export type AgentHandlers = {
   /** The model's voice: mono 16-bit PCM at `rate` Hz. */
   play(pcm: ArrayBuffer, rate: number): void;
   /** The lead talked over the model: drop its voice still queued. */
@@ -61,11 +61,11 @@ const SILENCE_GOODBYE_NOTE =
  * waits this long for them: with no greeting ready it answers what they say;
  * with one ready, it plays it once they pause.
  */
-const GREETING_WAIT_MS = 1_200;
+export const GREETING_WAIT_MS = 1_200;
 /** Their hello is over after this much quiet. */
-const HELLO_PAUSE_MS = 400;
+export const HELLO_PAUSE_MS = 400;
 /** A noisy line never goes quiet: the prepared greeting plays by this point regardless. */
-const HELLO_MAX_WAIT_MS = 2_000;
+export const HELLO_MAX_WAIT_MS = 2_000;
 /**
  * Gemini Live only speaks after the person does: on a silent line the call
  * just sat there. Measured from the end of the agent's own voice or the lead's
@@ -90,9 +90,9 @@ const WAIT_FOR_THEM_MS = 90_000;
 const HANGUP_NO_VOICE_MS = 5_000;
 const HANGUP_MAX_WAIT_MS = 12_000;
 /** The heard-audio test option keeps at most 20 minutes (38 MB) of the lead's side. */
-const MAX_HEARD_SAMPLES = 16_000 * 60 * 20;
+export const MAX_HEARD_SAMPLES = 16_000 * 60 * 20;
 /** A lead-side chunk this loud (-40 dBFS) counts as them making sound, for the reply-latency log. */
-const VOICE_PEAK = 0x8000 / 100;
+export const VOICE_PEAK = 0x8000 / 100;
 
 export class LiveAgent {
   private socket: WebSocket | null = null;
@@ -144,7 +144,7 @@ export class LiveAgent {
   private heard: Int16Array[] | null = null;
   private heardSamples = 0;
 
-  constructor(private readonly handlers: Handlers) {}
+  constructor(private readonly handlers: AgentHandlers) {}
 
   async start(): Promise<void> {
     this.handlers.trace("AI agent: asking for a session");
@@ -504,7 +504,7 @@ type LiveServerMessage = {
   goAway?: { timeLeft?: string };
 };
 
-function toBase64(buffer: ArrayBuffer): string {
+export function toBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 0x8000) {
@@ -513,7 +513,7 @@ function toBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function fromBase64(data: string): ArrayBuffer {
+export function fromBase64(data: string): ArrayBuffer {
   const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);

@@ -28,7 +28,7 @@
 import { REP_RELAY_SAMPLE_RATE, type RecorderCallPhase, type RecorderCallStatus } from "../../../src/lib/calls/contract";
 import { digitsOnly } from "../../../src/lib/calls/digits";
 import { whatsappContactName, type WhatsappContactName } from "../../../src/lib/calls/whatsappContact";
-import { LiveAgent } from "./live-agent";
+import { AgentSession } from "./agent-session";
 import { RepRelay } from "./rep-relay";
 import { pcm16Wav } from "./wav";
 import type { StationInboundMessage } from "../../../src/lib/calls/stationContract";
@@ -87,7 +87,7 @@ const TRANSCRIPT_WATCH_MS = 3 * 60 * 1000;
 
 let call: WaCall | null = null;
 /** The AI voice agent's session on the current call, when it is an agent call. */
-let agent: LiveAgent | null = null;
+let agent: AgentSession | null = null;
 let agentCallId: string | null = null;
 /** A rep call's audio through AgentSDR's relay, while it is on. */
 let relay: RepRelay | null = null;
@@ -929,7 +929,7 @@ function toBase64(bytes: Uint8Array): string {
 /** Opened while the call rings, so the agent is ready to speak the moment the lead picks up. */
 function startAgent(callId: string): void {
   stopAgent();
-  const session = new LiveAgent({
+  const session = new AgentSession({
     play: (pcm, rate) => toHook({ source: AGENT_SOURCE, type: "agent-play", callId, pcm, rate }, [pcm]),
     interrupt: () => toHook({ source: AGENT_SOURCE, type: "agent-interrupt", callId }),
     hangup: () => toHook({ source: AGENT_SOURCE, type: "agent-hangup", callId }),

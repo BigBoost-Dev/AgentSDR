@@ -135,6 +135,10 @@ export type AiCampaignSettings = {
   instructions: string;
   agentName: string | null;
   agentVoice: string | null;
+  /** Who talks on its calls: Gemini Live (default) or ElevenLabs' phone agent (realtime mode). */
+  voiceEngine: "gemini" | "elevenlabs";
+  /** The ElevenLabs voice id when voiceEngine is "elevenlabs"; null = the default voice. */
+  elevenlabsVoice: string | null;
   /** Cal.com booking page, e.g. https://cal.com/acme/30min. Required for book_meeting / either. */
   bookingUrl: string | null;
   /** The WhatsApp sent right after they agree to book; must contain {{bookingLink}}. */

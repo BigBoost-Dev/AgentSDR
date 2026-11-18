@@ -22,6 +22,8 @@ import { AI_CAMPAIGN_GOALS, AI_CAMPAIGN_GOAL_LABELS, AI_CAMPAIGN_MAX_CALLBACKS, 
 import { listCallingStations } from "@/lib/calls/client";
 import { setAiCampaignStations, updateAiCampaign } from "@/lib/calls/aiCampaigns/client";
 import type { CallingStation } from "@/lib/calls/stationContract";
+import { aiApi } from "@/lib/calls/aiCampaigns/client";
+import { DEFAULT_ELEVENLABS_VOICE, type ElevenLabsVoice } from "@/lib/calls/elevenlabs/contract";
 import { cn } from "@/utils/cn";
 import { errorText, NumberPicker, useBeforeUnload } from "./aiShared";
 
@@ -32,6 +34,8 @@ type Draft = {
   instructions: string;
   agentName: string;
   agentVoice: string;
+  voiceEngine: "gemini" | "elevenlabs";
+  elevenlabsVoice: string;
   bookingUrl: string;
   bookingMessage: string;
   maxCallbacks: number;
@@ -43,6 +47,8 @@ const draftOf = (campaign: AiCampaignDetail): Draft => ({
   instructions: campaign.instructions,
   agentName: campaign.agentName ?? "",
   agentVoice: campaign.agentVoice ?? DEFAULT_VOICE,
+  voiceEngine: campaign.voiceEngine,
+  elevenlabsVoice: campaign.elevenlabsVoice ?? DEFAULT_ELEVENLABS_VOICE,
   bookingUrl: campaign.bookingUrl ?? "",
   bookingMessage: campaign.bookingMessage,
   maxCallbacks: campaign.maxCallbacks,
@@ -75,6 +81,17 @@ export function AiSettingsTab({
   const [numberIds, setNumberIds] = useState<string[]>(savedNumberIds);
   const [savingNumbers, setSavingNumbers] = useState(false);
   const [numbersError, setNumbersError] = useState<string | null>(null);
+
+  // ElevenLabs' Indian-English voices, when ElevenLabs is connected (Settings → AI provider).
+  const [elevenVoices, setElevenVoices] = useState<ElevenLabsVoice[] | null>(null);
+  const [elevenError, setElevenError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    aiApi<{ voices: ElevenLabsVoice[] }>("/api/calling/agent/elevenlabs-voices")
+      .then((response) => { if (!cancelled) setElevenVoices(response.voices); })
+      .catch((cause) => { if (!cancelled) setElevenError(errorText(cause, "Could not load ElevenLabs voices")); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +131,8 @@ export function AiSettingsTab({
         instructions: draft.instructions,
         agentName: draft.agentName.trim() || null,
         agentVoice: draft.agentVoice === DEFAULT_VOICE ? null : draft.agentVoice,
+        voiceEngine: draft.voiceEngine,
+        elevenlabsVoice: draft.elevenlabsVoice === DEFAULT_ELEVENLABS_VOICE ? null : draft.elevenlabsVoice,
         bookingUrl: handover ? null : draft.bookingUrl.trim() || null,
         bookingMessage: draft.bookingMessage,
         maxCallbacks: draft.maxCallbacks,
@@ -211,20 +230,55 @@ export function AiSettingsTab({
               aria-invalid={nameTooLong || undefined}
             />
             <div>
-              <label className="mb-1.5 block text-label-sm text-text-strong-950">Voice</label>
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <Select.Root size="small" value={draft.agentVoice} onValueChange={(value) => set("agentVoice", value)}>
-                    <Select.Trigger aria-label="Voice"><Select.Value /></Select.Trigger>
-                    <Select.Content>
-                      <Select.Item value={DEFAULT_VOICE}>Default ({DEFAULT_AGENT_VOICE})</Select.Item>
-                      {AGENT_VOICES.map((voice) => <Select.Item key={voice.id} value={voice.id}>{voice.label}</Select.Item>)}
-                    </Select.Content>
-                  </Select.Root>
-                </div>
-                <VoicePreviewButton voice={draft.agentVoice} name={draft.agentName} />
-              </div>
+              <label className="mb-1.5 block text-label-sm text-text-strong-950">Voice engine</label>
+              <Select.Root size="small" value={draft.voiceEngine} onValueChange={(value) => set("voiceEngine", value as Draft["voiceEngine"])}>
+                <Select.Trigger aria-label="Voice engine"><Select.Value /></Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="gemini">Gemini Live</Select.Item>
+                  <Select.Item value="elevenlabs" disabled={!elevenVoices && draft.voiceEngine !== "elevenlabs"}>ElevenLabs (fast, English)</Select.Item>
+                </Select.Content>
+              </Select.Root>
+              {elevenError && draft.voiceEngine === "gemini" ? (
+                <p className="mt-1 text-paragraph-xs text-text-sub-600">Connect ElevenLabs in Settings → AI provider to use it.</p>
+              ) : null}
             </div>
+            {draft.voiceEngine === "gemini" ? (
+              <div>
+                <label className="mb-1.5 block text-label-sm text-text-strong-950">Voice</label>
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Select.Root size="small" value={draft.agentVoice} onValueChange={(value) => set("agentVoice", value)}>
+                      <Select.Trigger aria-label="Voice"><Select.Value /></Select.Trigger>
+                      <Select.Content>
+                        <Select.Item value={DEFAULT_VOICE}>Default ({DEFAULT_AGENT_VOICE})</Select.Item>
+                        {AGENT_VOICES.map((voice) => <Select.Item key={voice.id} value={voice.id}>{voice.label}</Select.Item>)}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
+                  <VoicePreviewButton voice={draft.agentVoice} name={draft.agentName} />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1.5 block text-label-sm text-text-strong-950">ElevenLabs voice</label>
+                <Select.Root size="small" value={draft.elevenlabsVoice} onValueChange={(value) => set("elevenlabsVoice", value)} disabled={!elevenVoices}>
+                  <Select.Trigger aria-label="ElevenLabs voice"><Select.Value placeholder={elevenError ?? "Loading voices…"} /></Select.Trigger>
+                  <Select.Content>
+                    {!elevenVoices?.some((voice) => voice.id === DEFAULT_ELEVENLABS_VOICE) ? (
+                      <Select.Item value={DEFAULT_ELEVENLABS_VOICE}>Monika Sogam (default)</Select.Item>
+                    ) : null}
+                    {(elevenVoices ?? []).map((voice) => (
+                      <Select.Item key={voice.id} value={voice.id}>{voice.name}{voice.detail ? ` · ${voice.detail}` : ""}</Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+                {(() => {
+                  const preview = elevenVoices?.find((voice) => voice.id === draft.elevenlabsVoice)?.previewUrl;
+                  return preview ? <audio key={preview} controls preload="none" src={preview} className="mt-2 h-9 w-full" aria-label="Voice preview" /> : null;
+                })()}
+                <p className="mt-1 text-paragraph-xs text-text-sub-600">ElevenLabs answers in English only. Try it on the Compare voices tab.</p>
+              </div>
+            )}
           </div>
         </FramePanel>
       </Frame>

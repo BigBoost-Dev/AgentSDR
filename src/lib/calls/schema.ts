@@ -181,6 +181,10 @@ export const callCampaigns = pgTable(
     aiInstructions: text("ai_instructions").notNull().default(""),
     aiAgentName: text("ai_agent_name"),
     aiAgentVoice: text("ai_agent_voice"),
+    /** Who talks on its calls: Gemini Live, or ElevenLabs' phone agent (realtime mode). scripts/add-ai-voice-engine.ts. */
+    aiVoiceEngine: text("ai_voice_engine").notNull().default("gemini").$type<"gemini" | "elevenlabs">(),
+    /** The ElevenLabs voice id when the engine is ElevenLabs; null = the default voice. */
+    aiElevenlabsVoice: text("ai_elevenlabs_voice"),
     aiSteps: jsonb("ai_steps").$type<AiCampaignStep[]>().notNull().default([]),
     aiChaseSteps: jsonb("ai_chase_steps").$type<AiCampaignStep[]>().notNull().default([]),
     aiBookingUrl: text("ai_booking_url"),
