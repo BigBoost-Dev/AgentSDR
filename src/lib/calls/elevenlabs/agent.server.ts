@@ -214,6 +214,22 @@ async function conversation(system: string, firstMessage: string, mode: ElevenLa
 
 const warmed = new Map<string, number>();
 const WARM_FOR_MS = 6 * 60 * 60 * 1000;
+/** When this process started warming each voice: until READY_AFTER_MS later, its calls use the default voice. */
+const warmingSince = new Map<string, number>();
+/** Tia, warmed at 10:33:26, was the default voice on a call 18 s later and right 3 minutes later (18 Nov 2026). */
+const READY_AFTER_MS = 3 * 60 * 1000;
+
+/**
+ * The voice a call speaks with: the campaign's, unless this process began
+ * preparing it under READY_AFTER_MS ago — then the default voice, which is
+ * always ready, rather than ElevenLabs' fallback (heard as a man).
+ */
+export function voiceForCall(voiceId: string | null): { voice: string; stillPreparing: string | null } {
+  const voice = voiceId?.trim() || DEFAULT_ELEVENLABS_VOICE;
+  if (voice === DEFAULT_ELEVENLABS_VOICE) return { voice, stillPreparing: null };
+  const since = warmingSince.get(`${currentOrganizationId()}|${voice}`);
+  return since !== undefined && Date.now() - since < READY_AFTER_MS ? { voice: DEFAULT_ELEVENLABS_VOICE, stillPreparing: voice } : { voice, stillPreparing: null };
+}
 
 /**
  * Gets a voice ready for the realtime agent before its first call. The first
@@ -227,6 +243,7 @@ export async function warmElevenLabsVoice(voiceId: string | null): Promise<void>
   const voice = voiceId?.trim() || DEFAULT_ELEVENLABS_VOICE;
   const key = `${currentOrganizationId()}|${voice}`;
   if (Date.now() - (warmed.get(key) ?? 0) < WARM_FOR_MS) return;
+  if (voice !== DEFAULT_ELEVENLABS_VOICE) warmingSince.set(key, Date.now());
   try {
     const session = await conversation("Say the line you are given, and nothing else.", "Hello, this is a quick voice check.", "realtime", voice);
     await new Promise<void>((resolve) => {
@@ -290,12 +307,12 @@ export async function mintElevenLabsCallToken(
   const system = agentInstructions(request, knowledge, context, live.templates["calls/agent-system"]);
   const firstName = request.lead?.firstName?.trim() ?? "";
   const opening = row.direction === "inbound" || !firstName ? "" : fillPrompt(firstMessage.text, { first_name: firstName });
-  const voiceId = voice?.trim() || DEFAULT_ELEVENLABS_VOICE;
+  const { voice: voiceId, stillPreparing } = voiceForCall(voice);
   const session = await traceGeneration(
     {
       name: "call-agent-setup",
       model: "elevenlabs-realtime",
-      input: { system, voice: voiceId, opening },
+      input: { system, voice: voiceId, opening, ...(stillPreparing ? { voiceStillPreparing: stillPreparing } : {}) },
       prompts: [...live.prompts, ...notes.prompts, firstMessage],
       sessionId: row.id,
       metadata: { engine: "elevenlabs", callId: row.id, personId: row.personId, campaignContactId: row.campaignContactId, direction: row.direction, knowledge: knowledge.map((document) => document.title) },
@@ -321,7 +338,7 @@ export async function elevenLabsRehearsalSession(rehearsal: Rehearsal, mode: Ele
   const [{ templates, prompts }, firstMessage] = await Promise.all([resolveLiveSetupTemplates(), getPromptTemplate("calls/elevenlabs-first-message")]);
   const system = agentInstructions(rehearsal.request, rehearsal.knowledge, rehearsal.context, templates["calls/agent-system"]);
   const firstName = rehearsal.request.lead?.firstName?.trim() ?? "";
-  const voice = voiceId?.trim() || DEFAULT_ELEVENLABS_VOICE;
+  const { voice } = voiceForCall(voiceId);
   return traceGeneration(
     {
       name: "call-voice-rehearsal-setup",

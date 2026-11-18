@@ -277,7 +277,7 @@ export function AiSettingsTab({
                   return preview ? <audio key={preview} controls preload="none" src={preview} className="mt-2 h-9 w-full" aria-label="Voice preview" /> : null;
                 })()}
                 <p className="mt-1 text-paragraph-xs text-text-sub-600">
-                  ElevenLabs answers in English only. A voice used for the first time takes a few minutes to get ready (until then ElevenLabs speaks in a default voice); AgentSDR starts that when you save, so wait about ten minutes before a test call.
+                  ElevenLabs answers in English only. A newly picked voice takes about three minutes to get ready after you save; calls in those minutes use Monika Sogam instead.
                 </p>
               </div>
             )}
