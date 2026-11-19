@@ -54,7 +54,7 @@ import {
 } from "./CrmLayout";
 import { RecordBody } from "./CrmSkeletons";
 import { asList, asObject, crmFetch, displayName, errorMessage, formatDate, relativeDate } from "./crm-utils";
-import { ClassificationPicker, formatMeetingRange, MeetingOutcomeButtons, FollowUpDialog, followUpSuccessMessage, RegenerateDraftDialog, humanize } from "./ActionRowTools";
+import { ClassificationPicker, DISCARD_LEAD_REASON, DISCARD_LEAD_SUCCESS, DiscardLeadDialog, formatMeetingRange, MeetingOutcomeButtons, FollowUpDialog, followUpSuccessMessage, RegenerateDraftDialog, humanize } from "./ActionRowTools";
 import { ContactAvatar } from "./ContactAvatar";
 import { takeRecordWorkspace } from "./recordPrefetch";
 import { announceRecordChanged } from "./recordEvents";
@@ -390,6 +390,7 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
 }) {
   const id = String(data.id);
   const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const personId = String(person.id ?? data.personId);
   const dnc = Boolean(data.dnc);
   const workflowState = String(data.workflowState ?? "");
@@ -434,6 +435,7 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
           title={`Mark "${String(currentStep.name)}" as done without sending it; the next step waits its usual delay`}
           onClick={() => void onAction(`/records/${id}/skip`, {}, "POST", "Step skipped — the next one is scheduled")}
         aria-label="Skip step"><Button.Icon as={RiSkipForwardLine} /><span className="hidden sm:inline">Skip step</span></Button.Root>}
+        <DiscardLeadDialog open={discardOpen} onOpenChange={setDiscardOpen} name={name} onConfirm={async () => { await onAction(`/records/${id}/close`, { reason: DISCARD_LEAD_REASON }, "POST", DISCARD_LEAD_SUCCESS); return true; }} />
         <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={async (at, note) => { await onAction(`/records/${id}/follow-up`, { at: at.toISOString(), note }, "POST", followUpSuccessMessage(at)); return true; }} />
         <Dropdown.Root>
           <Dropdown.Trigger asChild>
@@ -454,7 +456,7 @@ function RecordHeader({ back, data, person, name, avatarUrl, currentStep, active
             <Dropdown.Item onSelect={() => void onAction(`/people/${personId}/dnc`, { enabled: !dnc }, "POST", dnc ? "Do not contact removed" : "Contact marked as do not contact")}>
               <Dropdown.ItemIcon as={RiUserLine} />{dnc ? "Clear do not contact" : "Mark do not contact"}
             </Dropdown.Item>
-            <Dropdown.Item destructive={!closed} onSelect={() => void onAction(`/records/${id}/${closed ? "reopen" : "close"}`, closed ? {} : { reason: "Discarded by operator" }, "POST", closed ? "Record reopened" : "Lead discarded — it comes back if they reply")}>
+            <Dropdown.Item destructive={!closed} onSelect={() => { if (closed) void onAction(`/records/${id}/reopen`, {}, "POST", "Record reopened"); else setDiscardOpen(true); }}>
               <Dropdown.ItemIcon as={closed ? RiPlayLine : RiCloseCircleLine} />{closed ? "Reopen record" : "Discard lead"}
             </Dropdown.Item>
           </Dropdown.Content>

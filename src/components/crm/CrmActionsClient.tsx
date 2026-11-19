@@ -54,7 +54,7 @@ import { cn } from "@/utils/cn";
 import { ContactAvatar } from "./ContactAvatar";
 import { ErrorState, primaryButtonClass, secondaryButtonClass } from "./CrmLayout";
 import { RowsSkeleton } from "./CrmSkeletons";
-import { CategoryDot, ClassificationPicker, HoverPreview, HoverPreviewProvider, FollowUpDialog, followUpSuccessMessage, InlineDraftEditor, MeetingOutcomeTools, RegenerateDraftDialog, humanize, type RowMutation, type StageChangeExtra } from "./ActionRowTools";
+import { CategoryDot, ClassificationPicker, DISCARD_LEAD_REASON, DISCARD_LEAD_SUCCESS, DiscardLeadDialog, HoverPreview, HoverPreviewProvider, FollowUpDialog, followUpSuccessMessage, InlineDraftEditor, MeetingOutcomeTools, RegenerateDraftDialog, humanize, type RowMutation, type StageChangeExtra } from "./ActionRowTools";
 import { asList, asObject, CATEGORY_LABELS, crmFetch, displayName, errorMessage, formatDate, relativeDate, timeAgo } from "./crm-utils";
 import { prefetchRecordWorkspace } from "./recordPrefetch";
 import { useRecordChanged } from "./recordEvents";
@@ -950,6 +950,7 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
         <RowMenu
           draft={editable}
           recordId={id}
+          name={row.name}
           onMutate={onMutate}
           label={`More actions for ${row.name}`}
         />
@@ -963,16 +964,20 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
   </>;
 }
 
-export function RowMenu({ draft, recordId, onMutate, label, className }: {
+export function RowMenu({ draft, recordId, name, onMutate, label, className }: {
   draft: Data | null;
   recordId: string;
+  /** The lead's name, for the discard confirmation. */
+  name?: string;
   onMutate: RowMutation;
   label: string;
   className?: string;
 }) {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   return <>
+    <DiscardLeadDialog open={discardOpen} onOpenChange={setDiscardOpen} name={name} onConfirm={() => onMutate(`/records/${recordId}/close`, { reason: DISCARD_LEAD_REASON }, "POST", DISCARD_LEAD_SUCCESS)} />
     <FollowUpDialog open={followUpOpen} onOpenChange={setFollowUpOpen} onSubmit={(at, note) => onMutate(`/records/${recordId}/follow-up`, { at: at.toISOString(), note }, "POST", followUpSuccessMessage(at))} />
     {draft && <RegenerateDraftDialog open={regenerateOpen} onOpenChange={setRegenerateOpen} onSubmit={(feedback) => onMutate(`/drafts/${String(draft.id)}/regenerate`, { feedback }, "POST", "Draft rewritten with your notes")} />}
     <Dropdown.Root>
@@ -983,7 +988,7 @@ export function RowMenu({ draft, recordId, onMutate, label, className }: {
         <Dropdown.Item onSelect={() => setFollowUpOpen(true)}><Dropdown.ItemIcon as={RiCalendarScheduleLine} />Follow up later…</Dropdown.Item>
         {draft && <Dropdown.Item onSelect={() => setRegenerateOpen(true)}><Dropdown.ItemIcon as={RiRefreshLine} />Regenerate draft…</Dropdown.Item>}
         <Dropdown.Separator />
-        <Dropdown.Item destructive onSelect={() => void onMutate(`/records/${recordId}/close`, { reason: "Discarded by operator" }, "POST", "Lead discarded — it comes back if they reply")}><Dropdown.ItemIcon as={RiCloseCircleLine} />Discard lead</Dropdown.Item>
+        <Dropdown.Item destructive onSelect={() => setDiscardOpen(true)}><Dropdown.ItemIcon as={RiCloseCircleLine} />Discard lead</Dropdown.Item>
       </Dropdown.Content>
     </Dropdown.Root>
   </>;
@@ -1051,6 +1056,7 @@ export function ActionCard({ action, categories, now, busy, onOpen, onMutate, on
         <RowMenu
           draft={editable}
           recordId={id}
+          name={row.name}
           onMutate={onMutate}
           label={`More actions for ${row.name}`}
         />

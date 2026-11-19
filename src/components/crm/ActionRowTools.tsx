@@ -492,6 +492,53 @@ export function RegenerateDraftDialog({ open, onOpenChange, onSubmit, busy }: {
   );
 }
 
+/** The reason a discard records (crm_records.closed_reason), from every place a rep can discard. */
+export const DISCARD_LEAD_REASON = "Discarded by operator";
+export const DISCARD_LEAD_SUCCESS = "Lead discarded — it comes back if they reply";
+
+/**
+ * Confirms "Discard lead" — one misclick otherwise drops a live lead off the
+ * queue and throws away its draft. Discarding closes the record; a new reply
+ * reopens it, and the Closed view can reopen it by hand.
+ */
+export function DiscardLeadDialog({ open, onOpenChange, onConfirm, name }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Resolves true when the lead was discarded; the dialog closes itself then. */
+  onConfirm: () => Promise<boolean>;
+  /** The lead's name, for the title; omitted reads "this lead". */
+  name?: string | null;
+}) {
+  const [working, setWorking] = useState(false);
+  useEffect(() => { if (!open) setWorking(false); }, [open]);
+  const confirm = async () => {
+    if (working) return;
+    setWorking(true);
+    const ok = await onConfirm();
+    setWorking(false);
+    if (ok) onOpenChange(false);
+  };
+  return (
+    // Portaled, but React still bubbles clicks into a table row: swallow them.
+    <div className="contents" onClick={(event) => event.stopPropagation()}>
+    <Modal.Root open={open} onOpenChange={(next) => { if (!working) onOpenChange(next); }}>
+      <Modal.Content size="max-w-md">
+        <Modal.Header icon={RiDeleteBinLine}>
+          <Modal.Title>Discard {name?.trim() || "this lead"}?</Modal.Title>
+          <Modal.Description>It leaves Action required, its draft is thrown away and no follow-ups go out. If they reply again it comes back on its own; you can also reopen it from Closed.</Modal.Description>
+        </Modal.Header>
+        <Modal.Footer>
+          <Modal.Close asChild><button type="button" className={secondaryButtonClass} disabled={working} autoFocus>Cancel</button></Modal.Close>
+          <button type="button" className={dangerButtonClass} disabled={working} onClick={() => void confirm()}>
+            <RiDeleteBinLine className="size-4" aria-hidden="true" />{working ? "Discarding…" : "Discard lead"}
+          </button>
+        </Modal.Footer>
+      </Modal.Content>
+    </Modal.Root>
+    </div>
+  );
+}
+
 /**
  * "Follow up later": the lead asked to be contacted on a date. Nothing goes
  * out until then, automated follow-ups stop, and the lead returns to Action
