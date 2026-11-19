@@ -501,11 +501,14 @@ export function ActionRows({ actions, categories, onActionsChange, pipeline, ref
         <caption className="sr-only">People and CRM actions requiring review</caption>
         <Table.Header>
           <Table.Row>
+            {/* The queue has no Due column: nearly every row read "Immediate
+                reply", so its width goes to the reply and the draft. The
+                pipeline keeps its Status column. */}
             <Table.Head scope="col" className="w-[19%] px-4">Contact</Table.Head>
-            <Table.Head scope="col" className="w-[18%] px-4">Classification</Table.Head>
-            <Table.Head scope="col" className="w-[20%] px-4">Latest reply</Table.Head>
-            <Table.Head scope="col" className="w-[23%] px-4">Draft reply</Table.Head>
-            <Table.Head scope="col" className="w-[17%] px-3 text-right">{pipeline ? "Status" : "Due"}</Table.Head>
+            <Table.Head scope="col" className={cn("px-4", pipeline ? "w-[18%]" : "w-[17%]")}>Classification</Table.Head>
+            <Table.Head scope="col" className={cn("px-4", pipeline ? "w-[20%]" : "w-[29%]")}>Latest reply</Table.Head>
+            <Table.Head scope="col" className={cn("px-4", pipeline ? "w-[23%]" : "w-[31%]")}>Draft reply</Table.Head>
+            {pipeline && <Table.Head scope="col" className="w-[17%] px-3 text-right">Status</Table.Head>}
             <Table.Head scope="col" className="w-12 px-2"><span className="sr-only">More actions</span></Table.Head>
           </Table.Row>
         </Table.Header>
@@ -943,9 +946,9 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
           <Button.Root variant="primary" mode="filled" size="xxsmall" disabled={!sendable} onClick={() => sendDraft(row, onMutate)} aria-label={`Send the draft to ${row.name}`} title={sendTitle}><Button.Icon as={RiSendPlaneFill} />Send</Button.Root>
         </div>}
       </Table.Cell>
-      <Table.Cell className="px-3 py-3 text-right">
+      {pipeline && <Table.Cell className="px-3 py-3 text-right">
         <DueChip row={row} />
-      </Table.Cell>
+      </Table.Cell>}
       <Table.Cell className="px-2 py-3" data-row-tools onKeyDown={(event) => event.stopPropagation()}>
         <RowMenu
           draft={editable}
@@ -957,7 +960,7 @@ function ActionRow({ action, categories, busy, editing, pipeline, now, onOpen, o
       </Table.Cell>
     </Table.Row>
     {editing && editable && <tr>
-      <td colSpan={6} className="rounded-xl bg-bg-weak-50 px-4 pb-4 pt-2">
+      <td colSpan={pipeline ? 6 : 5} className="rounded-xl bg-bg-weak-50 px-4 pb-4 pt-2">
         <InlineDraftEditor action={action} busy={busy} onMutate={onMutate} onClose={onToggleEdit} />
       </td>
     </tr>}
