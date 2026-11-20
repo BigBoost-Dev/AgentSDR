@@ -4,6 +4,7 @@ import { connections, leads, messages, type LeadStatus } from "@/lib/linkedin/sc
 import { deliverMessageToConnection, getChatIdForUser } from "@/services/unipile.service";
 import { fillTemplate } from "@/lib/outreach/render";
 import { isPersonDoNotContact } from "@/lib/crm/policies";
+import { releaseEmailHandoffOnAccept } from "@/lib/linkedin/emailHandoff.server";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 import { acceptanceDecision } from "@/lib/linkedin/sequenceTiming";
 
@@ -62,14 +63,26 @@ export const processLeadAcceptance = async (
   account: AcceptanceAccount,
   log: (msg: string) => void
 ): Promise<"sent" | "advanced" | "retry" | "blocked" | "deferred"> => {
+  // Accept wins over an email hand-off. Only a lead that was WITHDRAWN can have been handed to email;
+  // once the status update below has committed, the hand-off is released from the FRESH row (the copy
+  // in `lead` may predate a hand-off that committed while we waited on the provider).
+  const wasWithdrawn = lead.status === "WITHDRAWN";
+  const releaseHandoff = async () => {
+    if (!wasWithdrawn) return;
+    const stopped = await releaseEmailHandoffOnAccept(lead.id, lead.personId);
+    if (stopped > 0) log(`accept after an email hand-off — ${stopped} email enrollment(s) stopped`);
+  };
+
   const delayDays = lead.acceptanceDelayDays ?? 0;
   const decision = acceptanceDecision(lead, delayDays);
   if (decision === "park") {
     // This is the moment of the accept: the delay counts from here, not from an older Connection row.
-    await db
+    const parked = await db
       .update(leads)
       .set({ status: "CONNECTED", acceptedAt: new Date(), inviteWithdrawnAt: null })
-      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "WITHDRAWN"])));
+      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "WITHDRAWN"])))
+      .returning({ id: leads.id });
+    if (parked.length) await releaseHandoff();
     log(`acceptance delay of ${delayDays} day(s) starts now — lead parked as CONNECTED`);
     return "deferred";
   }
@@ -93,7 +106,7 @@ export const processLeadAcceptance = async (
   await backfillInvitationConnection(lead.id, connection.id);
 
   if (!acceptanceText) {
-    await db
+    const advanced = await db
       .update(leads)
       .set({
         status: "ACCEPT_MESSAGE_SENT",
@@ -101,7 +114,9 @@ export const processLeadAcceptance = async (
         acceptMessageSentAt: new Date(),
         inviteWithdrawnAt: null,
       })
-      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
+      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)))
+      .returning({ id: leads.id });
+    if (advanced.length) await releaseHandoff();
     log("no acceptance message — advanced status without chat");
     return "advanced";
   }
@@ -127,7 +142,8 @@ export const processLeadAcceptance = async (
       log("acceptance has an uncertain provider outcome — reconciliation required");
       return "retry";
     }
-    await db.update(leads).set({ status: "ACCEPT_MESSAGE_SENT", linkedinAccountId: account.id, acceptMessageSentAt: new Date(), inviteWithdrawnAt: null }).where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
+    const claimedAdvance = await db.update(leads).set({ status: "ACCEPT_MESSAGE_SENT", linkedinAccountId: account.id, acceptMessageSentAt: new Date(), inviteWithdrawnAt: null }).where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES))).returning({ id: leads.id });
+    if (claimedAdvance.length) await releaseHandoff();
     log("acceptance was already claimed or sent — advanced without duplicate delivery");
     return "advanced";
   }
@@ -166,7 +182,7 @@ export const processLeadAcceptance = async (
 
   await db.update(messages).set({ linkedinMessageId: delivered.messageId }).where(and(inOrg(messages), eq(messages.id, messageClaim.id)));
 
-  await db
+  const sentAdvance = await db
     .update(leads)
     .set({
       status: "ACCEPT_MESSAGE_SENT",
@@ -174,7 +190,9 @@ export const processLeadAcceptance = async (
       acceptMessageSentAt: new Date(),
       inviteWithdrawnAt: null,
     })
-    .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
+    .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)))
+    .returning({ id: leads.id });
+  if (sentAdvance.length) await releaseHandoff();
 
   log(`acceptance sent — chatId: ${chatId}`);
   return "sent";

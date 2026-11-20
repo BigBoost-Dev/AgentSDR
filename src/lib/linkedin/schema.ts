@@ -46,6 +46,7 @@
 
 import { createId } from "@paralleldrive/cuid2";
 import { people } from "@/lib/leads/schema";
+import { outreachCampaigns } from "@/lib/outreach/schema";
 import { sql } from "drizzle-orm";
 import {
   pgTable,
@@ -173,6 +174,12 @@ export const campaigns = pgTable("Campaign", {
   followUp4DelayDays: integer("followUp4DelayDays").notNull().default(4),
   /** Withdraw an invitation still unaccepted after this many working days; null = never. */
   withdrawAfterWorkingDays: integer("withdrawAfterWorkingDays"),
+  /** Email campaign to add the person to when their unaccepted invitation is withdrawn; null = no hand-off. */
+  emailCampaignIfNotAcceptedId: uuid("emailCampaignIfNotAcceptedId").references(() => outreachCampaigns.id, { onDelete: "set null" }),
+  /** Email campaign to add the person to after the last LinkedIn message with no reply; null = no hand-off. */
+  emailCampaignAfterSequenceId: uuid("emailCampaignAfterSequenceId").references(() => outreachCampaigns.id, { onDelete: "set null" }),
+  /** Days after the sequence completed before the person is added to the after-sequence email campaign. */
+  emailAfterSequenceDelayDays: integer("emailAfterSequenceDelayDays").notNull().default(3),
   createdAt: timestamp("createdAt", { precision: 3, mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" })
     .notNull()
@@ -186,6 +193,7 @@ export const campaigns = pgTable("Campaign", {
       sql`${t.acceptanceDelayDays} BETWEEN 0 AND 30 AND ${t.followUp1DelayDays} BETWEEN 1 AND 60 AND ${t.followUp2DelayDays} BETWEEN 1 AND 60 AND ${t.followUp3DelayDays} BETWEEN 1 AND 60 AND ${t.followUp4DelayDays} BETWEEN 1 AND 60`,
     ),
     // Mirrors the CHECK added by scripts/add-linkedin-invite-withdrawal.ts.
+    check("Campaign_email_after_delay_chk", sql`${t.emailAfterSequenceDelayDays} BETWEEN 0 AND 60`),
     check("Campaign_withdraw_after_chk", sql`${t.withdrawAfterWorkingDays} IS NULL OR ${t.withdrawAfterWorkingDays} BETWEEN 1 AND 60`),
   ],
 );
@@ -247,6 +255,14 @@ export const leads = pgTable(
     inviteWithdrawnAt: timestamp("inviteWithdrawnAt", { precision: 3, mode: "date" }),
     /** Failed withdraw attempts; the engine stops after 3. */
     withdrawRetryCount: integer("withdrawRetryCount").notNull().default(0),
+    /** When the sequence ended (stamped on every COMPLETED write); null for leads completed before the hand-off migration. */
+    completedAt: timestamp("completedAt", { precision: 3, mode: "date" }),
+    /** When the email hand-off was decided, once, whatever the result. */
+    emailHandoffAt: timestamp("emailHandoffAt", { precision: 3, mode: "date" }),
+    /** The email campaign the hand-off was meant for (no FK: it is history). */
+    emailHandoffCampaignId: uuid("emailHandoffCampaignId"),
+    /** enrolled | duplicate | suppressed | dnc | replied | active_elsewhere | no_email | stopped_by_accept */
+    emailHandoffResult: text("emailHandoffResult"),
     createdAt: timestamp("createdAt", { precision: 3, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" })
       .notNull()

@@ -20,6 +20,8 @@ import {
   normalizeLinkedinSequence,
 } from "@/lib/linkedin/campaignSequence";
 import { parseSequenceDelays, parseWithdrawAfterWorkingDays, type SequenceDelays } from "@/lib/linkedin/sequenceTiming";
+import { parseEmailHandoffSettings } from "@/lib/linkedin/emailHandoff";
+import { firstUnknownEmailCampaignId } from "@/lib/linkedin/emailHandoff.server";
 
 const ACCOUNT_SELECT = {
   id: linkedInAccounts.id,
@@ -145,6 +147,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp3DelayDays: campaign.followUp3DelayDays,
         followUp4DelayDays: campaign.followUp4DelayDays,
         withdrawAfterWorkingDays: campaign.withdrawAfterWorkingDays,
+        emailCampaignIfNotAcceptedId: campaign.emailCampaignIfNotAcceptedId,
+        emailCampaignAfterSequenceId: campaign.emailCampaignAfterSequenceId,
+        emailAfterSequenceDelayDays: campaign.emailAfterSequenceDelayDays,
         accounts,
         totalLeads: campaignLeads.length,
         statusCounts,
@@ -190,6 +195,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!withdrawAfter.ok) {
         return NextResponse.json({ ok: false, error: withdrawAfter.error }, { status: 400 });
       }
+      const handoff = parseEmailHandoffSettings(body);
+      if (!handoff.ok) {
+        return NextResponse.json({ ok: false, error: handoff.error }, { status: 400 });
+      }
+      if (existingCampaign.type === "PERSONAL" && (handoff.emailCampaignIfNotAcceptedId || handoff.emailCampaignAfterSequenceId)) {
+        return NextResponse.json({ ok: false, error: "Personal campaigns cannot hand people to an email campaign: their LinkedIn replies do not reach the CRM, so nothing would stop the emails" }, { status: 400 });
+      }
+      if (await firstUnknownEmailCampaignId([handoff.emailCampaignIfNotAcceptedId, handoff.emailCampaignAfterSequenceId])) {
+        return NextResponse.json({ ok: false, error: "Email campaign not found" }, { status: 400 });
+      }
 
       const sequenceInput = { invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message, followUp4Message };
       const hasSequenceUpdate = LINKEDIN_SEQUENCE_FIELDS.some((field) => sequenceInput[field] !== undefined);
@@ -211,7 +226,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       // Update scalar fields
-      const scalarUpdate: { name?: string; description?: string | null; status?: CampaignStatus; invitationMessage?: string | null; acceptanceMessage?: string | null; followUp1Message?: string | null; followUp2Message?: string | null; followUp3Message?: string | null; followUp4Message?: string | null; withdrawAfterWorkingDays?: number | null } & Partial<SequenceDelays> = {
+      const scalarUpdate: { name?: string; description?: string | null; status?: CampaignStatus; invitationMessage?: string | null; acceptanceMessage?: string | null; followUp1Message?: string | null; followUp2Message?: string | null; followUp3Message?: string | null; followUp4Message?: string | null; withdrawAfterWorkingDays?: number | null; emailCampaignIfNotAcceptedId?: string | null; emailCampaignAfterSequenceId?: string | null; emailAfterSequenceDelayDays?: number } & Partial<SequenceDelays> = {
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description: description?.trim() || null }),
         ...(status !== undefined && { status: status as CampaignStatus }),
@@ -224,6 +239,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...delays.delays,
         // Absent keeps the stored value; null or "" turns withdrawal off.
         ...(withdrawAfter.present && { withdrawAfterWorkingDays: withdrawAfter.value }),
+        // Absent keeps the stored value; null turns that hand-off off.
+        ...(handoff.emailCampaignIfNotAcceptedId !== undefined && { emailCampaignIfNotAcceptedId: handoff.emailCampaignIfNotAcceptedId }),
+        ...(handoff.emailCampaignAfterSequenceId !== undefined && { emailCampaignAfterSequenceId: handoff.emailCampaignAfterSequenceId }),
+        ...(handoff.emailAfterSequenceDelayDays !== undefined && { emailAfterSequenceDelayDays: handoff.emailAfterSequenceDelayDays }),
       };
       // Prisma issued the UPDATE even with an empty `data` (it still bumps
       // @updatedAt); Drizzle rejects an empty `set`, so only skip when there is

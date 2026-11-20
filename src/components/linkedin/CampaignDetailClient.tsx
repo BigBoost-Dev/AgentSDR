@@ -52,6 +52,10 @@ type Campaign = {
   followUp4DelayDays: number;
   /** Working days after which an unaccepted invitation is withdrawn; null = never. */
   withdrawAfterWorkingDays: number | null;
+  /** Email campaigns a person is handed to (null = off), and the days after the sequence ends before the second starts. */
+  emailCampaignIfNotAcceptedId: string | null;
+  emailCampaignAfterSequenceId: string | null;
+  emailAfterSequenceDelayDays: number;
   accounts: LinkedInAccount[];
   totalLeads: number;
   statusCounts: Record<string, number>;
@@ -231,6 +235,7 @@ export function CampaignDetailClient({
           <LinkedInSequenceEditor
             campaignId={campaign.id}
             initialSequence={campaign}
+            emailHandoffAvailable={campaign.type !== "PERSONAL"}
             onSaved={(sequence) => setCampaign((current) => ({ ...current, ...sequence }))}
           />
         </div>

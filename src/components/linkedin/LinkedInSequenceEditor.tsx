@@ -28,6 +28,7 @@ import {
   type SequenceDelayField,
   type SequenceDelays,
 } from "@/lib/linkedin/sequenceTiming";
+import { DEFAULT_EMAIL_AFTER_DELAY_DAYS, EMAIL_AFTER_DELAY_BOUNDS, parseEmailHandoffSettings } from "@/lib/linkedin/emailHandoff";
 import { MAX_INVITATION_MESSAGE_LENGTH } from "@/lib/linkedin/invitationMessage";
 import { cn } from "@/utils/cn";
 
@@ -55,11 +56,19 @@ export function LinkedInSequenceEditor({
   initialSequence,
   onSaved,
   saveLabel = "Save sequence",
+  emailHandoffAvailable = true,
 }: {
   campaignId: string;
-  initialSequence?: Partial<Record<LinkedinSequenceField, string | null>> & Partial<Record<SequenceDelayField, number | null>> & { withdrawAfterWorkingDays?: number | null };
+  initialSequence?: Partial<Record<LinkedinSequenceField, string | null>> & Partial<Record<SequenceDelayField, number | null>> & {
+    withdrawAfterWorkingDays?: number | null;
+    emailCampaignIfNotAcceptedId?: string | null;
+    emailCampaignAfterSequenceId?: string | null;
+    emailAfterSequenceDelayDays?: number | null;
+  };
   onSaved?: (sequence: LinkedinSequenceSettings) => void;
   saveLabel?: string;
+  /** False for PERSONAL campaigns: their LinkedIn replies never reach the CRM, so the email hand-off is not offered. */
+  emailHandoffAvailable?: boolean;
 }) {
   const [sequence, setSequence] = useState<LinkedinCampaignSequence>(() =>
     sequenceFromNullable(initialSequence ?? EMPTY_LINKEDIN_SEQUENCE),
@@ -71,6 +80,11 @@ export function LinkedInSequenceEditor({
   });
   // Empty = never withdraw an unaccepted invitation. Kept as text so it can be cleared while typing.
   const [withdrawInput, setWithdrawInput] = useState(() => String(initialSequence?.withdrawAfterWorkingDays ?? ""));
+  // Email hand-off: the email campaigns to add a person to ("" = none) and the days to wait after the sequence ends.
+  const [emailIfNotAccepted, setEmailIfNotAccepted] = useState(initialSequence?.emailCampaignIfNotAcceptedId ?? "");
+  const [emailAfterSequence, setEmailAfterSequence] = useState(initialSequence?.emailCampaignAfterSequenceId ?? "");
+  const [emailDelayInput, setEmailDelayInput] = useState(String(initialSequence?.emailAfterSequenceDelayDays ?? DEFAULT_EMAIL_AFTER_DELAY_DAYS));
+  const [emailCampaigns, setEmailCampaigns] = useState<{ id: string; name: string; status: string }[]>([]);
   const [selected, setSelected] = useState(0);
   const [fields, setFields] = useState<MergeField[]>(DEFAULT_FIELDS);
   const [leads, setLeads] = useState<PreviewLead[]>([]);
@@ -100,6 +114,17 @@ export function LinkedInSequenceEditor({
     return () => { cancelled = true; };
   }, [campaignId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/outreach/campaigns")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data && Array.isArray(data.campaigns)) setEmailCampaigns(data.campaigns);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const delayError = useMemo(() => {
     const blank = SEQUENCE_DELAY_FIELDS.find((field) => delayInputs[field].trim() === "");
     if (blank) return `${SEQUENCE_DELAY_LABELS[blank]} must be a whole number of days`;
@@ -109,6 +134,10 @@ export function LinkedInSequenceEditor({
     const parsed = parseWithdrawAfterWorkingDays({ withdrawAfterWorkingDays: withdrawInput });
     return parsed.ok ? null : parsed.error;
   }, [withdrawInput]);
+  const emailDelayError = useMemo(() => {
+    const parsed = parseEmailHandoffSettings({ emailAfterSequenceDelayDays: emailDelayInput.trim() === "" ? "x" : emailDelayInput });
+    return parsed.ok ? null : parsed.error;
+  }, [emailDelayInput]);
   // Timing text follows the numbers being typed; an invalid entry falls back to the default for the label only.
   const steps = useMemo(() => {
     const typed = Object.fromEntries(
@@ -122,12 +151,17 @@ export function LinkedInSequenceEditor({
   }, [delayInputs]);
   const step = steps[selected]!;
   const stepDelayField = LINKEDIN_STEP_DELAY_FIELD[step.field];
-  const validationError = useMemo(() => linkedinSequenceError(sequence) ?? delayError ?? withdrawError, [sequence, delayError, withdrawError]);
+  const validationError = useMemo(() => linkedinSequenceError(sequence) ?? delayError ?? withdrawError ?? emailDelayError, [sequence, delayError, withdrawError, emailDelayError]);
 
   function updateDelay(field: SequenceDelayField, value: string) {
     setSaved(false);
     setError(null);
     setDelayInputs((current) => ({ ...current, [field]: value }));
+  }
+
+  function touch() {
+    setSaved(false);
+    setError(null);
   }
 
   function updateWithdraw(value: string) {
@@ -156,9 +190,14 @@ export function LinkedInSequenceEditor({
   }
 
   async function save() {
-    const issue = linkedinSequenceError(sequence) ?? delayError ?? withdrawError;
+    const issue = linkedinSequenceError(sequence) ?? delayError ?? withdrawError ?? emailDelayError;
     if (issue) { setError(issue); return; }
     const withdrawAfterWorkingDays = withdrawInput.trim() === "" ? null : Number(withdrawInput);
+    const emailHandoff = {
+      emailCampaignIfNotAcceptedId: emailHandoffAvailable ? emailIfNotAccepted || null : null,
+      emailCampaignAfterSequenceId: emailHandoffAvailable ? emailAfterSequence || null : null,
+      emailAfterSequenceDelayDays: Number(emailDelayInput),
+    };
     const delays = withDefaultDelays(Object.fromEntries(SEQUENCE_DELAY_FIELDS.map((field) => [field, Number(delayInputs[field])])));
     setSaving(true);
     setError(null);
@@ -166,14 +205,14 @@ export function LinkedInSequenceEditor({
       const response = await fetch(`/api/linkedin/campaigns/${campaignId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...sequence, ...delays, withdrawAfterWorkingDays }),
+        body: JSON.stringify({ ...sequence, ...delays, withdrawAfterWorkingDays, ...emailHandoff }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(data.error ?? "Could not save sequence");
       const normalized = normalizeLinkedinSequence(sequence);
       setSequence(normalized);
       setSaved(true);
-      onSaved?.({ ...normalized, ...delays, withdrawAfterWorkingDays });
+      onSaved?.({ ...normalized, ...delays, withdrawAfterWorkingDays, ...emailHandoff });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save sequence");
     } finally {
@@ -271,6 +310,47 @@ export function LinkedInSequenceEditor({
                 Empty = never. The send day does not count; the account&apos;s work days and time zone decide what a working day is.
               </p>
             </div>
+            {emailHandoffAvailable && <div className="mt-2 space-y-3 border-t border-stroke-soft-200 px-2.5 pb-1.5 pt-3">
+              <label className="block text-label-sm text-text-strong-950">
+                If the invite is withdrawn: add to email campaign
+                <Select.Root size="small" value={emailIfNotAccepted} onValueChange={(value) => { touch(); setEmailIfNotAccepted(value); }}>
+                  <Select.Trigger className="mt-1.5 w-full"><Select.Value placeholder="None" /></Select.Trigger>
+                  <Select.Content>
+                    <Select.Item value="">None</Select.Item>
+                    {emailCampaigns.map((item) => <Select.Item key={item.id} value={item.id}>{item.name}{item.status !== "active" ? ` (${item.status})` : ""}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </label>
+              <label className="block text-label-sm text-text-strong-950">
+                After the last LinkedIn message with no reply: add to email campaign
+                <Select.Root size="small" value={emailAfterSequence} onValueChange={(value) => { touch(); setEmailAfterSequence(value); }}>
+                  <Select.Trigger className="mt-1.5 w-full"><Select.Value placeholder="None" /></Select.Trigger>
+                  <Select.Content>
+                    <Select.Item value="">None</Select.Item>
+                    {emailCampaigns.map((item) => <Select.Item key={item.id} value={item.id}>{item.name}{item.status !== "active" ? ` (${item.status})` : ""}</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </label>
+              <label className="flex flex-wrap items-center gap-2 text-label-sm text-text-strong-950">
+                Start that email campaign after
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={EMAIL_AFTER_DELAY_BOUNDS.min}
+                  max={EMAIL_AFTER_DELAY_BOUNDS.max}
+                  step={1}
+                  value={emailDelayInput}
+                  onChange={(event) => { touch(); setEmailDelayInput(event.target.value); }}
+                  aria-label="Days after the last LinkedIn message before the email campaign starts"
+                  className="h-9 w-20 rounded-lg bg-bg-white-0 px-2.5 text-paragraph-sm tabular-nums text-text-strong-950 ring-1 ring-inset ring-stroke-soft-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                />
+                days
+              </label>
+              <p className="text-paragraph-xs text-text-sub-600">
+                A person who replied, is Do Not Contact, has no email, or is already active in another email campaign is never added.
+                A draft or paused email campaign holds them until it is launched.
+              </p>
+            </div>}
           </FramePanel>
         </Frame>
 

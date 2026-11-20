@@ -145,7 +145,7 @@ const completeExhaustedLeads = async (account: LinkedInAccount, stage: FollowUpS
       )
     );
   const completed = exhausted.length
-    ? await db.update(leadsTable).set({ status: "COMPLETED" }).where(and(inOrg(leadsTable), inArray(leadsTable.id, exhausted.map((lead) => lead.id)))).returning({ id: leadsTable.id })
+    ? await db.update(leadsTable).set({ status: "COMPLETED", completedAt: new Date() }).where(and(inOrg(leadsTable), inArray(leadsTable.id, exhausted.map((lead) => lead.id)))).returning({ id: leadsTable.id })
     : [];
 
   const count = completed.length;
@@ -227,7 +227,7 @@ const runFollowUpStage = async (account: LinkedInAccount, stage: FollowUpStage):
     if (!hasText(messageText)) {
       await db
         .update(leadsTable)
-        .set({ status: "COMPLETED" })
+        .set({ status: "COMPLETED", completedAt: new Date() })
         .where(and(inOrg(leadsTable), eq(leadsTable.id, lead.id)));
       console.log(
         `[sendFollowUps] ${stage.label}: ${lead.linkedinUrl} has no usable message — marked COMPLETED`
@@ -265,6 +265,7 @@ const runFollowUpStage = async (account: LinkedInAccount, stage: FollowUpStage):
       await db.update(leadsTable).set({
         status: isExhausted ? "COMPLETED" : stage.toStatus,
         [stage.sentAtField]: new Date(),
+        ...(isExhausted && { completedAt: new Date() }),
       }).where(and(inOrg(leadsTable), eq(leadsTable.id, lead.id)));
       continue;
     }
@@ -295,6 +296,7 @@ const runFollowUpStage = async (account: LinkedInAccount, stage: FollowUpStage):
       await tx.update(leadsTable).set({
         status: isExhausted ? "COMPLETED" : stage.toStatus,
         [stage.sentAtField]: new Date(),
+        ...(isExhausted && { completedAt: new Date() }),
       }).where(and(inOrg(leadsTable), eq(leadsTable.id, lead.id)));
       await tx.update(messages).set({ linkedinMessageId }).where(and(inOrg(messages), eq(messages.id, messageClaim.id)));
       if (lead.inviteRetryCount > 0) await tx.update(leadsTable).set({ inviteRetryCount: 0 }).where(and(inOrg(leadsTable), eq(leadsTable.id, lead.id)));

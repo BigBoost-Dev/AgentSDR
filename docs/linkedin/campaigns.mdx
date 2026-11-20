@@ -101,6 +101,17 @@ On the **Sequence** tab, **Withdraw an unaccepted invite after [n] working days*
 - **Failures.** A failure that is about the lead is retried on later runs, up to 3 times, then the lead is left as **Request Sent**. A temporary failure (rate limit, server error, network) stops the run for that account and does not use up a retry.
 - LinkedIn may stop you inviting the same person again for a while after a withdrawal.
 
+### Hand a person to an email campaign
+
+On the **Sequence** tab, two pickers choose an email campaign (default: none) to add a person to:
+
+- **If the invite is withdrawn.** One hour after the invitation was withdrawn, when no accept has been recorded.
+- **After the last LinkedIn message with no reply.** The sequence ended as **Completed**, and the number of days you set ("start that email campaign after", 0 to 60, default 3) have passed since the last message. People who completed before this feature existed are never handed off.
+
+AgentSDR checks each person once, up to 50 leads per outreach run, and records the outcome on the lead panel: added, already in the campaign, or skipped because the email is suppressed, the person is Do Not Contact, they replied on any channel, they are active in another email campaign, or they have no email address. "Replied" means any inbound message from the person on any channel, including an out-of-office reply: the cautious choice, so an auto-reply also keeps them out of the email campaign. The hand-off is not offered on Personal campaigns (their LinkedIn replies do not reach the CRM, so nothing would stop the emails), and the API refuses it there. A skipped person is not tried again. Email campaigns start sending when they are active: a draft or paused email campaign holds the person until you launch it, and it does not honour the delay, so launch it when you want the emails to begin.
+
+If an invitation that was withdrawn is accepted after the person was already added to the email campaign (within the 2-day window), the accept wins: the email sequence is stopped and the lead continues as an accept. The earlier hand-off decision is then released, so if that lead later finishes the sequence with no reply it can still be handed to the after-sequence email campaign.
+
 <Warning>
 The connection request note is limited to 300 characters. A lead whose request, after merge fields are filled in, is longer than 300 is marked **Failed** and is not sent. The preview warns when a rendered invitation is too long, so preview a lead with a long name or company.
 </Warning>

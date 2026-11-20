@@ -38,9 +38,27 @@ Each release lists the database migrations it needs; see
   was withdrawn, the lead continues as an accept within 2 days of the
   withdrawal; later accepts are left for a person. Temporary errors stop the
   run without using a retry. See `docs/linkedin/campaigns.mdx`.
+- **LinkedIn leads can be handed to an email campaign, 2026-11-20.** A
+  LinkedIn campaign can name two email campaigns on the Sequence tab and in
+  the API: one for people whose invitation was withdrawn
+  (`emailCampaignIfNotAcceptedId`, added an hour after the withdrawal so a
+  racing accept wins) and one for people who finished the sequence with no
+  reply (`emailCampaignAfterSequenceId`, added `emailAfterSequenceDelayDays`
+  days after the last message, default 3). Both default to none. A person who
+  replied on any channel, is Do Not Contact, has no email, is suppressed or is
+  active in another email campaign is never added; the outcome shows on the
+  lead panel. Each lead is decided once, once per outreach run for up to 50
+  leads. If an invitation is accepted after the person was already added to
+  email, the email enrollment is stopped and the decision is released (so the
+  after-sequence email campaign can still follow). Any inbound reply,
+  including an out-of-office, blocks the hand-off; Personal campaigns are
+  excluded. Leads completed before the migration are never handed off. See `docs/linkedin/campaigns.mdx`.
 
 ### Fixed
 
+- **A reply from a lead who finished the sequence now marks the LinkedIn lead
+  Replied.** CRM reply ingest left `COMPLETED` leads out of the statuses it
+  moves to `REPLIED`.
 - **A reply from a lead in Connected status is no longer dropped.** The
   LinkedIn `message-received` webhook ignored messages from leads in
   `CONNECTED`, so such a reply neither reached the CRM nor stopped the
@@ -87,6 +105,12 @@ Each release lists the database migrations it needs; see
 - `bun run scripts/add-linkedin-invite-withdrawal.ts` adds `WITHDRAWN` to
   `LeadStatus`, `Campaign.withdrawAfterWorkingDays` (with a CHECK),
   `Lead.inviteWithdrawnAt` and `Lead.withdrawRetryCount`. Run it before
+  deploying the code. It is idempotent and ends with a self-check.
+- `bun run scripts/add-linkedin-email-handoff.ts` adds `Lead.completedAt`,
+  `emailHandoffAt`, `emailHandoffCampaignId`, `emailHandoffResult` and
+  `Campaign.emailCampaignIfNotAcceptedId`, `emailCampaignAfterSequenceId`
+  (foreign keys to `outreach_campaigns`, ON DELETE SET NULL) and
+  `emailAfterSequenceDelayDays` (default 3, CHECK 0 to 60). Run it before
   deploying the code. It is idempotent and ends with a self-check.
 
 ## [0.3.1] - 2026-10-08

@@ -72,3 +72,34 @@ export async function stopCampaignLeads(campaignId: string, emails: string[]): P
     };
   });
 }
+
+/**
+ * Ends one person's running sequence in one email campaign, exactly as stopCampaignLeads does
+ * (queue entries removed, `sequence_completed`, nextSendAt cleared), but addressed by Person id and
+ * usable inside a caller's transaction. Returns how many enrollments were stopped (0 or 1).
+ * Used when a LinkedIn accept wins over an email hand-off.
+ */
+export async function stopPersonEmailEnrollment(
+  executor: Pick<typeof db, "select" | "update" | "delete">,
+  campaignId: string,
+  personId: string,
+): Promise<number> {
+  const running = await executor
+    .select({ id: outreachLeads.id })
+    .from(outreachLeads)
+    .where(and(
+      leadsInOrg(),
+      eq(outreachLeads.campaignId, campaignId),
+      eq(outreachLeads.personId, personId),
+      inArray(outreachLeads.sequenceStatus, STOPPABLE),
+    ));
+  if (!running.length) return 0;
+  const ids = running.map((lead) => lead.id);
+  await executor.delete(outreachMailboxQueue).where(inArray(outreachMailboxQueue.leadId, ids));
+  await executor
+    .update(outreachLeads)
+    .set({ sequenceStatus: "sequence_completed", nextSendAt: null, updatedAt: new Date() })
+    // Re-check the status: a row the sender moved to bounced or suppressed meanwhile is left as it is.
+    .where(and(inArray(outreachLeads.id, ids), inArray(outreachLeads.sequenceStatus, STOPPABLE)));
+  return ids.length;
+}

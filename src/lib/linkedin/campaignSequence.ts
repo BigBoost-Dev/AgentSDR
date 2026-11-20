@@ -42,7 +42,14 @@ export const LINKEDIN_STEP_DELAY_FIELD: Partial<Record<LinkedinSequenceField, Se
  * Messages plus timing: what the editor and the wizard hand around.
  * `withdrawAfterWorkingDays` is the working days after which an unaccepted invitation is withdrawn; null = never.
  */
-export type LinkedinSequenceSettings = LinkedinCampaignSequence & SequenceDelays & { withdrawAfterWorkingDays: number | null };
+export type LinkedinSequenceSettings = LinkedinCampaignSequence &
+  SequenceDelays & {
+    withdrawAfterWorkingDays: number | null;
+    /** Email campaigns a person is handed to (null = off) and the days after the sequence ends before the second starts. */
+    emailCampaignIfNotAcceptedId: string | null;
+    emailCampaignAfterSequenceId: string | null;
+    emailAfterSequenceDelayDays: number;
+  };
 
 export type LinkedinSequenceStep = {
   field: LinkedinSequenceField;

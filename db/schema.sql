@@ -692,6 +692,10 @@ CREATE TABLE public."Campaign" (
     "followUp3DelayDays" integer DEFAULT 3 NOT NULL,
     "followUp4DelayDays" integer DEFAULT 4 NOT NULL,
     "withdrawAfterWorkingDays" integer,
+    "emailCampaignIfNotAcceptedId" uuid,
+    "emailCampaignAfterSequenceId" uuid,
+    "emailAfterSequenceDelayDays" integer DEFAULT 3 NOT NULL,
+    CONSTRAINT "Campaign_email_after_delay_chk" CHECK ((("emailAfterSequenceDelayDays" >= 0) AND ("emailAfterSequenceDelayDays" <= 60))),
     CONSTRAINT "Campaign_sequence_delays_chk" CHECK (((("acceptanceDelayDays" >= 0) AND ("acceptanceDelayDays" <= 30)) AND (("followUp1DelayDays" >= 1) AND ("followUp1DelayDays" <= 60)) AND (("followUp2DelayDays" >= 1) AND ("followUp2DelayDays" <= 60)) AND (("followUp3DelayDays" >= 1) AND ("followUp3DelayDays" <= 60)) AND (("followUp4DelayDays" >= 1) AND ("followUp4DelayDays" <= 60)))),
     CONSTRAINT "Campaign_withdraw_after_chk" CHECK ((("withdrawAfterWorkingDays" IS NULL) OR (("withdrawAfterWorkingDays" >= 1) AND ("withdrawAfterWorkingDays" <= 60))))
 );
@@ -791,7 +795,11 @@ CREATE TABLE public."Lead" (
     "followUp4SentAt" timestamp(3) without time zone,
     "acceptedAt" timestamp(3) without time zone,
     "inviteWithdrawnAt" timestamp(3) without time zone,
-    "withdrawRetryCount" integer DEFAULT 0 NOT NULL
+    "withdrawRetryCount" integer DEFAULT 0 NOT NULL,
+    "completedAt" timestamp(3) without time zone,
+    "emailHandoffAt" timestamp(3) without time zone,
+    "emailHandoffCampaignId" uuid,
+    "emailHandoffResult" text
 );
 
 --
@@ -5432,6 +5440,20 @@ ALTER TABLE ONLY public."CampaignAccount"
 
 ALTER TABLE ONLY public."CampaignAccount"
     ADD CONSTRAINT "CampaignAccount_linkedinAccountId_fkey" FOREIGN KEY ("linkedinAccountId") REFERENCES public."LinkedInAccount"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
+-- Name: Campaign Campaign_emailCampaignAfterSequenceId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Campaign"
+    ADD CONSTRAINT "Campaign_emailCampaignAfterSequenceId_fkey" FOREIGN KEY ("emailCampaignAfterSequenceId") REFERENCES public.outreach_campaigns(id) ON DELETE SET NULL;
+
+--
+-- Name: Campaign Campaign_emailCampaignIfNotAcceptedId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Campaign"
+    ADD CONSTRAINT "Campaign_emailCampaignIfNotAcceptedId_fkey" FOREIGN KEY ("emailCampaignIfNotAcceptedId") REFERENCES public.outreach_campaigns(id) ON DELETE SET NULL;
 
 --
 -- Name: Campaign Campaign_organization_fk; Type: FK CONSTRAINT; Schema: public; Owner: -

@@ -18,6 +18,7 @@ import { DocsLink } from "@/components/page/DocsLink";
 import { PageHeader } from "@/components/page/PageHeader";
 import { EMPTY_LINKEDIN_SEQUENCE, linkedinSequenceSteps, type LinkedinSequenceSettings } from "@/lib/linkedin/campaignSequence";
 import { DEFAULT_SEQUENCE_DELAYS } from "@/lib/linkedin/sequenceTiming";
+import { DEFAULT_EMAIL_AFTER_DELAY_DAYS } from "@/lib/linkedin/emailHandoff";
 import { cn } from "@/utils/cn";
 
 type Account = { id: string; username: string; name: string | null; profilePictureUrl: string | null };
@@ -56,7 +57,7 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
   const [type, setType] = useState<"REGULAR" | "PERSONAL">("REGULAR");
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [leadCount, setLeadCount] = useState(0);
-  const [sequence, setSequence] = useState<LinkedinSequenceSettings>({ ...EMPTY_LINKEDIN_SEQUENCE, ...DEFAULT_SEQUENCE_DELAYS, withdrawAfterWorkingDays: null });
+  const [sequence, setSequence] = useState<LinkedinSequenceSettings>({ ...EMPTY_LINKEDIN_SEQUENCE, ...DEFAULT_SEQUENCE_DELAYS, withdrawAfterWorkingDays: null, emailCampaignIfNotAcceptedId: null, emailCampaignAfterSequenceId: null, emailAfterSequenceDelayDays: DEFAULT_EMAIL_AFTER_DELAY_DAYS });
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showPeople, setShowPeople] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -305,7 +306,7 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
               <div>
                 <StepHeading title="Build your sequence" description="Personalise each stage with People fields and preview the final message." />
                 <div className="mt-5">
-                  <LinkedInSequenceEditor campaignId={campaignId} initialSequence={sequence} saveLabel="Save and review" onSaved={(next) => { setSequence(next); setStep(3); }} />
+                  <LinkedInSequenceEditor campaignId={campaignId} initialSequence={sequence} emailHandoffAvailable={type !== "PERSONAL"} saveLabel="Save and review" onSaved={(next) => { setSequence(next); setStep(3); }} />
                 </div>
                 <div className="mt-5">
                   <AlignButton.Root variant="neutral" mode="ghost" size="small" onClick={() => setStep(1)}>
@@ -342,6 +343,18 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
                       {sequence.withdrawAfterWorkingDays === null
                         ? "never withdrawn"
                         : `withdrawn after ${sequence.withdrawAfterWorkingDays} working day${sequence.withdrawAfterWorkingDays === 1 ? "" : "s"}`}
+                    </span>
+                  </p>
+                  <p className="px-3 pb-2 text-paragraph-sm text-text-sub-600">
+                    If the invite is withdrawn:{" "}
+                    <span className="text-text-strong-950">{sequence.emailCampaignIfNotAcceptedId ? "added to an email campaign" : "no email follow-up"}</span>
+                  </p>
+                  <p className="px-3 pb-2 text-paragraph-sm text-text-sub-600">
+                    After the last message with no reply:{" "}
+                    <span className="text-text-strong-950">
+                      {sequence.emailCampaignAfterSequenceId
+                        ? `added to an email campaign after ${sequence.emailAfterSequenceDelayDays} day${sequence.emailAfterSequenceDelayDays === 1 ? "" : "s"}`
+                        : "no email follow-up"}
                     </span>
                   </p>
                 </div>

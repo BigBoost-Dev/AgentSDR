@@ -1,7 +1,7 @@
 # Plan: LinkedIn sequence timing, invite withdrawal and email hand-off
 
 - Track: Sales Automation, lender outbound (vault `Sales-Automation`)
-- Status: approved (Part 2 in progress)
+- Status: approved (Part 3 in progress)
 - Approved by VJ: 2026-11-20 ("approved for now", with Unipile kept)
 - Branch: `feat/lender-flow` in BigBoost-Dev/AgentSDR (each part later cherry-picked onto `upstream/main` as its own PR to Kandid-ai/AgentSDR)   PR: -
 
@@ -21,6 +21,7 @@ Make a LinkedIn campaign run BigBoost's lender flow, with every new setting defa
 | withdrawAfterWorkingDays (null or 1..60) | null = never | 4 |
 | emailCampaignIfNotAcceptedId (uuid, ON DELETE SET NULL) | null | campaign A |
 | emailCampaignAfterSequenceId (uuid, ON DELETE SET NULL) | null | campaign B |
+| emailAfterSequenceDelayDays (0..60) | 3 | 4 |
 
 Each delay counts from the previous step, as today.
 
@@ -70,6 +71,7 @@ Part 3, email hand-off:
 - AgentSDR's default work days are Mon to Sat; set our accounts to Mon to Fri so Saturday does not count toward Day 4.
 - A paused or draft email campaign A/B leaves hand-offs as `pending` until it is launched.
 - Our fork drifts from upstream; offering each part back as a PR keeps that small.
+- A lead whose hand-off keeps throwing (for example the email campaign vanishes mid-run) stays undecided and is retried every run; 50 such leads would block newer ones. Unlikely given the ON DELETE SET NULL foreign keys and the API checks; not guarded.
 
 ## Rollback
 - Per campaign: put the settings back to their defaults (no deploy).
@@ -77,6 +79,9 @@ Part 3, email hand-off:
 - Undo hand-off enrollments with `POST /api/v1/campaigns/:id/leads/stop` using `emailHandoffCampaignId`.
 
 ## Deviations
+- Part 3 adds `Campaign.emailAfterSequenceDelayDays` (default 3, ours 4): email B starts that many days after `Lead.completedAt`. The email queue sends `pending` leads of active campaigns at once and ignores step waits, so the delay has to come from our side. A withdrawn invitation is handed to email A one hour after `inviteWithdrawnAt` (settle period for a racing accept). Leads completed before the migration have `completedAt` NULL and are never handed off.
+- Hand-off review fixes: the accept-wins stop runs AFTER the status update and decides from a fresh, locked read of the lead (`releaseEmailHandoffOnAccept`), never from the webhook's copy; it also clears `emailHandoffAt` (result and campaign id stay as history) so email B can follow later. The `replied` guard also reads CRM `crm_records.last_inbound_at` (any inbound message on any channel, out-of-office included, deliberately cautious), and CRM reply ingest now marks COMPLETED LinkedIn leads REPLIED. PERSONAL campaigns are excluded (their replies never reach CRM ingest); the API rejects hand-off ids on them and the editor hides the pickers. `stopPersonEmailEnrollment` only updates rows still in a stoppable status. Part 2: `withdrawInvitations` waits between actions before the claim, so the claim and cancel run back to back.
+- Hand-off guards in order: dnc, replied (a LinkedIn lead REPLIED, or an email enrollment reply_received or reply_processing; no shared helper existed), active_elsewhere, no_email. Each lead is decided once (`emailHandoffAt`), whatever the result. An accept after an enrolled hand-off stops the email enrollment and sets the result to `stopped_by_accept`.
 - Enrollment uses the "Add from People" path (`addPeopleToEmailCampaign`, takes Person ids) instead of the public API path, which re-finds people by email. Same suppression and duplicate rules.
 - Existing bugs fixed on the way: `REPLY_STATUSES` (message-received webhook) drops replies from CONNECTED leads, so they would not stop outreach (verified 20 Nov, line 22); the automated-message unique index must include FOLLOW_UP_4 or it could double-send; `migrationParity.ts` hard-codes 24/48/72h; nothing polls accepted connections (`getAcceptedConnections` has no caller, verified 20 Nov).
 - The fork's CLAUDE.md says work on main without PRs; BigBoost's SDLC and upstream CONTRIBUTING.md want a branch and PR. We use `feat/lender-flow` and PRs.

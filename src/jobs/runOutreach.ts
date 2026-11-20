@@ -7,6 +7,7 @@ import { resolveProfiles } from "../functions/resolveProfiles";
 import { sendInvitations } from "../functions/sendInvitations";
 import { sendFollowUps } from "../functions/sendFollowUps";
 import { withdrawInvitations } from "../functions/withdrawInvitations";
+import { handOffLinkedinLeadsToEmail } from "@/lib/linkedin/emailHandoff.server";
 import { computeNextAllowedRun, formatNextAllowedRun, isAccountRunnable } from "@/lib/linkedin/nextAllowedRun";
 import { formatWorkingHoursSummary, isWithinWorkingHours, withOrganizationHours } from "@/lib/linkedin/workingHours";
 import { channelRules } from "@/lib/channels/rules.server";
@@ -46,6 +47,16 @@ const runOrganizationOutreach = async (resolutionPaused: boolean, outboundPaused
   if (!(await isPlatformConnected("unipile"))) {
     console.log("[runOutreach] Unipile is not connected — skipping");
     return;
+  }
+
+  // LinkedIn-to-email hand-off: once per organization per run, outside any account's working
+  // hours (email has its own schedule). A failure here must not stop the LinkedIn pipeline.
+  if (!outboundPaused) {
+    try {
+      await handOffLinkedinLeadsToEmail();
+    } catch (err) {
+      console.error(`[runOutreach] Email hand-off failed: ${serializeError(err)}`);
+    }
   }
 
   // Sync account statuses from Unipile before running the pipeline

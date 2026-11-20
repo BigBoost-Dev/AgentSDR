@@ -155,18 +155,24 @@ export const withdrawInvitations = async (account: LinkedInAccount): Promise<voi
   // Every Unipile action (profile check or cancel) counts toward the cap, and they are spaced
   // by the delay between invitations: the wait happens before every action except the first.
   let actions = 0;
-  const pace = async () => {
+  const waitBetweenActions = async () => {
     if (actions > 0) await sleep(pickInRange(rules.inviteDelaySeconds) * 1000);
+  };
+  const pace = async () => {
+    await waitBetweenActions();
     actions += 1;
   };
 
   /** Claim, then cancel `invitationId`. Returns true when the run must stop. */
   const claimAndCancel = async (lead: Candidate, label: string, invitationId: string): Promise<boolean> => {
+    // Wait BEFORE the claim, so the claim and the cancel run back to back: no sleep sits between
+    // them, which keeps the window where a crash leaves a WITHDRAWN lead with a live invitation short.
+    await waitBetweenActions();
     if (!(await claim(lead.id))) {
       console.log(`[withdrawInvitations] ${label} changed state meanwhile — skipping`);
       return false;
     }
-    await pace();
+    actions += 1;
     try {
       const outcome = await cancelInvitation(account.linkedinId, invitationId);
       if (outcome === "cancelled") {

@@ -12,6 +12,8 @@ import {
 } from "@/lib/linkedin/schema";
 import { linkedinSequenceError, normalizeLinkedinSequence } from "@/lib/linkedin/campaignSequence";
 import { parseSequenceDelays, parseWithdrawAfterWorkingDays } from "@/lib/linkedin/sequenceTiming";
+import { parseEmailHandoffSettings } from "@/lib/linkedin/emailHandoff";
+import { firstUnknownEmailCampaignId } from "@/lib/linkedin/emailHandoff.server";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 
 const ACCOUNT_SELECT = {
@@ -126,6 +128,16 @@ export async function POST(req: NextRequest) {
       if (!withdrawAfter.ok) {
         return NextResponse.json({ ok: false, error: withdrawAfter.error }, { status: 400 });
       }
+      const handoff = parseEmailHandoffSettings(body);
+      if (!handoff.ok) {
+        return NextResponse.json({ ok: false, error: handoff.error }, { status: 400 });
+      }
+      if (campaignType === "PERSONAL" && (handoff.emailCampaignIfNotAcceptedId || handoff.emailCampaignAfterSequenceId)) {
+        return NextResponse.json({ ok: false, error: "Personal campaigns cannot hand people to an email campaign: their LinkedIn replies do not reach the CRM, so nothing would stop the emails" }, { status: 400 });
+      }
+      if (await firstUnknownEmailCampaignId([handoff.emailCampaignIfNotAcceptedId, handoff.emailCampaignAfterSequenceId])) {
+        return NextResponse.json({ ok: false, error: "Email campaign not found" }, { status: 400 });
+      }
 
       if (ids.length) {
         const connected = await db
@@ -155,6 +167,9 @@ export async function POST(req: NextRequest) {
             ...delays.delays,
             // null (or absent) = never withdraw an unaccepted invitation.
             withdrawAfterWorkingDays: withdrawAfter.value,
+            emailCampaignIfNotAcceptedId: handoff.emailCampaignIfNotAcceptedId ?? null,
+            emailCampaignAfterSequenceId: handoff.emailCampaignAfterSequenceId ?? null,
+            ...(handoff.emailAfterSequenceDelayDays !== undefined && { emailAfterSequenceDelayDays: handoff.emailAfterSequenceDelayDays }),
             updatedAt: new Date(),
           })
           .returning();

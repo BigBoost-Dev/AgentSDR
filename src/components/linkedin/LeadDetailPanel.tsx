@@ -58,6 +58,17 @@ export const LEAD_STATUS_LABELS: Record<string, string> = {
   WITHDRAWN: "Invite withdrawn",
 };
 
+const EMAIL_HANDOFF_LABELS: Record<string, string> = {
+  enrolled: "Added to the email campaign",
+  duplicate: "Already in the email campaign",
+  suppressed: "Skipped: email is suppressed",
+  dnc: "Skipped: Do Not Contact",
+  replied: "Skipped: replied",
+  active_elsewhere: "Skipped: active in another email campaign",
+  no_email: "Skipped: no email address",
+  stopped_by_accept: "Email stopped: the invitation was accepted",
+};
+
 const MESSAGE_TYPE_LABEL: Record<string, string> = {
   INVITATION: "Invitation",
   ACCEPTANCE: "Acceptance",
@@ -99,6 +110,8 @@ export type LeadDetail = {
   renderedTemplates: Record<LeadMessageField, string | null>;
   requestSentAt: string | null;
   inviteWithdrawnAt: string | null;
+  emailHandoffAt: string | null;
+  emailHandoffResult: string | null;
   acceptMessageSentAt: string | null;
   followUp1SentAt: string | null;
   followUp2SentAt: string | null;
@@ -540,6 +553,12 @@ export function LeadDetailPanel({
                   <DetailRow label="Added" value={fmt(lead.createdAt)} />
                   <DetailRow label="Invite sent" value={fmt(lead.requestSentAt)} />
                   {lead.inviteWithdrawnAt && <DetailRow label="Invite withdrawn" value={fmt(lead.inviteWithdrawnAt)} />}
+                  {lead.emailHandoffAt && (
+                    <DetailRow
+                      label="Email hand-off"
+                      value={`${EMAIL_HANDOFF_LABELS[lead.emailHandoffResult ?? ""] ?? lead.emailHandoffResult ?? "Decided"} · ${fmt(lead.emailHandoffAt)}`}
+                    />
+                  )}
                   <DetailRow
                     label="Accepted"
                     value={fmt(lead.acceptMessageSentAt ?? lead.connection?.connectedAt ?? null)}

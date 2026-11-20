@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { outreachCampaigns, outreachLeads, suppressionList } from "@/lib/outreach/schema";
 import { campaigns as linkedinCampaigns, leads as linkedinLeads } from "@/lib/linkedin/schema";
 import { isInvitationMessageTooLong } from "@/lib/linkedin/invitationMessage";
-import { getPeopleByIds, withLeadTransaction } from "./records";
+import { getPeopleByIds, withLeadTransaction, type LeadTransaction } from "./records";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 
 export type AssignmentResult = {
@@ -16,8 +16,21 @@ export type AssignmentResult = {
 };
 
 export async function addPeopleToEmailCampaign(campaignId: string, personIds: string[]): Promise<AssignmentResult> {
+  return withLeadTransaction((tx) => addPeopleToEmailCampaignInTransaction(tx, campaignId, personIds));
+}
+
+/**
+ * The enrollment rules, inside a transaction the caller owns (the LinkedIn hand-off enrolls
+ * and records its decision in one). Skips people with no email, a suppressed email, or an
+ * existing enrollment in this campaign; everyone else is added as `pending`.
+ */
+export async function addPeopleToEmailCampaignInTransaction(
+  tx: LeadTransaction,
+  campaignId: string,
+  personIds: string[],
+): Promise<AssignmentResult> {
   const uniqueIds = [...new Set(personIds.map((id) => id.trim()).filter(Boolean))];
-  return withLeadTransaction(async (tx) => {
+  {
     const [campaign] = await tx.select({ id: outreachCampaigns.id }).from(outreachCampaigns).where(and(inOrg(outreachCampaigns), eq(outreachCampaigns.id, campaignId))).limit(1);
     if (!campaign) throw new Error("Email campaign not found");
 
@@ -56,7 +69,7 @@ export async function addPeopleToEmailCampaign(campaignId: string, personIds: st
     }
     result.skippedMissingIdentity += uniqueIds.length - rows.length;
     return result;
-  });
+  }
 }
 
 export type LinkedinSequenceInput = {
