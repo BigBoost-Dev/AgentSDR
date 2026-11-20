@@ -41,6 +41,13 @@ const httpStatusFromBody = (body: unknown): number | undefined => {
   return undefined;
 };
 
+/** The HTTP status an API error carries (`.response.status`, or `status` / `statusCode` in a Unipile `.body`), when it has one. */
+export function errorHttpStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const withBody = err as ErrorWithBody;
+  return withBody.response?.status ?? httpStatusFromBody(withBody.body);
+}
+
 export function serializeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
 

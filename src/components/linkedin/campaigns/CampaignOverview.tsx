@@ -85,6 +85,7 @@ export function CampaignOverview({
     { key: "queued", label: "Not invited yet", value: f.queued, color: MUTED, icon: RiTimeLine },
     { key: "awaiting", label: "Awaiting acceptance", value: f.awaiting, color: LINKEDIN, icon: RiSendPlaneLine },
     { key: "inSequence", label: "In sequence", value: f.inSequence, color: "#e5930a", icon: RiLoader4Line },
+    { key: "withdrawn", label: "Invite withdrawn", value: f.withdrawn, color: MUTED, icon: RiTimeLine },
     { key: "completed", label: "Completed, no reply", value: f.completed, color: STATUS.good, icon: RiCheckboxCircleLine },
     { key: "replied", label: "Replied", value: f.replied, color: "#7d52f4", icon: RiReplyLine },
     { key: "failed", label: "Failed or cancelled", value: f.failed + f.cancelled, color: STATUS.critical, icon: RiErrorWarningLine },

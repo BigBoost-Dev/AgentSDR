@@ -6,6 +6,7 @@ import { syncAllAccounts } from "../functions/syncAllAccounts";
 import { resolveProfiles } from "../functions/resolveProfiles";
 import { sendInvitations } from "../functions/sendInvitations";
 import { sendFollowUps } from "../functions/sendFollowUps";
+import { withdrawInvitations } from "../functions/withdrawInvitations";
 import { computeNextAllowedRun, formatNextAllowedRun, isAccountRunnable } from "@/lib/linkedin/nextAllowedRun";
 import { formatWorkingHoursSummary, isWithinWorkingHours, withOrganizationHours } from "@/lib/linkedin/workingHours";
 import { channelRules } from "@/lib/channels/rules.server";
@@ -91,6 +92,13 @@ const runOrganizationOutreach = async (resolutionPaused: boolean, outboundPaused
       continue;
     }
     await sendInvitations(account);
+    // Campaigns with "withdraw after N working days" set; does nothing for the rest.
+    try {
+      await withdrawInvitations(account);
+    } catch (err) {
+      // A withdrawal problem must not stop this account's follow-ups.
+      console.error(`[runOutreach] Invite withdrawal failed for @${account.username}: ${serializeError(err)}`);
+    }
     await sendFollowUps(account);
 
     const nextAllowedRun = computeNextAllowedRun(new Date(), rules.runGapMinutes);

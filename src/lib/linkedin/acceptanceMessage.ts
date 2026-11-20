@@ -1,11 +1,18 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { connections, leads, messages } from "@/lib/linkedin/schema";
+import { connections, leads, messages, type LeadStatus } from "@/lib/linkedin/schema";
 import { deliverMessageToConnection, getChatIdForUser } from "@/services/unipile.service";
 import { fillTemplate } from "@/lib/outreach/render";
 import { isPersonDoNotContact } from "@/lib/crm/policies";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 import { acceptanceDecision } from "@/lib/linkedin/sequenceTiming";
+
+/**
+ * Statuses an accept can move on from. WITHDRAWN is here because the accept can race our
+ * withdrawal (the invitation was accepted just before or while we cancelled it); the lead is
+ * then handled exactly like a REQUEST_SENT one, and `inviteWithdrawnAt` is cleared as it moves on.
+ */
+const ACCEPTABLE_STATUSES: LeadStatus[] = ["REQUEST_SENT", "CONNECTED", "WITHDRAWN"];
 
 type AcceptanceLead = {
   id: string;
@@ -61,8 +68,8 @@ export const processLeadAcceptance = async (
     // This is the moment of the accept: the delay counts from here, not from an older Connection row.
     await db
       .update(leads)
-      .set({ status: "CONNECTED", acceptedAt: new Date() })
-      .where(and(inOrg(leads), eq(leads.id, lead.id), eq(leads.status, "REQUEST_SENT")));
+      .set({ status: "CONNECTED", acceptedAt: new Date(), inviteWithdrawnAt: null })
+      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "WITHDRAWN"])));
     log(`acceptance delay of ${delayDays} day(s) starts now — lead parked as CONNECTED`);
     return "deferred";
   }
@@ -92,8 +99,9 @@ export const processLeadAcceptance = async (
         status: "ACCEPT_MESSAGE_SENT",
         linkedinAccountId: account.id,
         acceptMessageSentAt: new Date(),
+        inviteWithdrawnAt: null,
       })
-      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "CONNECTED"])));
+      .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
     log("no acceptance message — advanced status without chat");
     return "advanced";
   }
@@ -119,7 +127,7 @@ export const processLeadAcceptance = async (
       log("acceptance has an uncertain provider outcome — reconciliation required");
       return "retry";
     }
-    await db.update(leads).set({ status: "ACCEPT_MESSAGE_SENT", linkedinAccountId: account.id, acceptMessageSentAt: new Date() }).where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "CONNECTED"])));
+    await db.update(leads).set({ status: "ACCEPT_MESSAGE_SENT", linkedinAccountId: account.id, acceptMessageSentAt: new Date(), inviteWithdrawnAt: null }).where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
     log("acceptance was already claimed or sent — advanced without duplicate delivery");
     return "advanced";
   }
@@ -127,7 +135,7 @@ export const processLeadAcceptance = async (
   if (await isPersonDoNotContact(db, lead.personId)) {
     await db.transaction(async (tx) => {
       await tx.delete(messages).where(and(inOrg(messages), eq(messages.id, messageClaim.id)));
-      await tx.update(leads).set({ status: "FAILED" }).where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "CONNECTED"])));
+      await tx.update(leads).set({ status: "FAILED" }).where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
     });
     log("acceptance blocked by Person-global DNC");
     return "blocked";
@@ -164,8 +172,9 @@ export const processLeadAcceptance = async (
       status: "ACCEPT_MESSAGE_SENT",
       linkedinAccountId: account.id,
       acceptMessageSentAt: new Date(),
+      inviteWithdrawnAt: null,
     })
-    .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ["REQUEST_SENT", "CONNECTED"])));
+    .where(and(inOrg(leads), eq(leads.id, lead.id), inArray(leads.status, ACCEPTABLE_STATUSES)));
 
   log(`acceptance sent — chatId: ${chatId}`);
   return "sent";

@@ -67,7 +67,8 @@ CREATE TYPE public."LeadStatus" AS ENUM (
     'FAILED',
     'FOLLOW_UP_3_SENT',
     'COMPLETED',
-    'CANCELLED'
+    'CANCELLED',
+    'WITHDRAWN'
 );
 
 --
@@ -690,7 +691,9 @@ CREATE TABLE public."Campaign" (
     "followUp2DelayDays" integer DEFAULT 2 NOT NULL,
     "followUp3DelayDays" integer DEFAULT 3 NOT NULL,
     "followUp4DelayDays" integer DEFAULT 4 NOT NULL,
-    CONSTRAINT "Campaign_sequence_delays_chk" CHECK (((("acceptanceDelayDays" >= 0) AND ("acceptanceDelayDays" <= 30)) AND (("followUp1DelayDays" >= 1) AND ("followUp1DelayDays" <= 60)) AND (("followUp2DelayDays" >= 1) AND ("followUp2DelayDays" <= 60)) AND (("followUp3DelayDays" >= 1) AND ("followUp3DelayDays" <= 60)) AND (("followUp4DelayDays" >= 1) AND ("followUp4DelayDays" <= 60))))
+    "withdrawAfterWorkingDays" integer,
+    CONSTRAINT "Campaign_sequence_delays_chk" CHECK (((("acceptanceDelayDays" >= 0) AND ("acceptanceDelayDays" <= 30)) AND (("followUp1DelayDays" >= 1) AND ("followUp1DelayDays" <= 60)) AND (("followUp2DelayDays" >= 1) AND ("followUp2DelayDays" <= 60)) AND (("followUp3DelayDays" >= 1) AND ("followUp3DelayDays" <= 60)) AND (("followUp4DelayDays" >= 1) AND ("followUp4DelayDays" <= 60)))),
+    CONSTRAINT "Campaign_withdraw_after_chk" CHECK ((("withdrawAfterWorkingDays" IS NULL) OR (("withdrawAfterWorkingDays" >= 1) AND ("withdrawAfterWorkingDays" <= 60))))
 );
 
 --
@@ -786,7 +789,9 @@ CREATE TABLE public."Lead" (
     "organizationId" uuid NOT NULL,
     "followUp4Message" text,
     "followUp4SentAt" timestamp(3) without time zone,
-    "acceptedAt" timestamp(3) without time zone
+    "acceptedAt" timestamp(3) without time zone,
+    "inviteWithdrawnAt" timestamp(3) without time zone,
+    "withdrawRetryCount" integer DEFAULT 0 NOT NULL
 );
 
 --

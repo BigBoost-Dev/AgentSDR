@@ -3,7 +3,7 @@ import { MAX_LEAD_RETRIES } from "./inviteRetry";
 import { fillTemplate } from "../outreach/render";
 import { DAY_MS, withDefaultDelays, type SequenceDelays } from "./sequenceTiming";
 
-export const LINKEDIN_TERMINAL_STATUSES = new Set(["REPLIED", "FAILED", "CANCELLED", "COMPLETED"]);
+export const LINKEDIN_TERMINAL_STATUSES = new Set(["REPLIED", "FAILED", "CANCELLED", "COMPLETED", "WITHDRAWN"]);
 
 export type LinkedinParityLead = {
   id: string;

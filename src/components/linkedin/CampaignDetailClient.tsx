@@ -50,6 +50,8 @@ type Campaign = {
   followUp2DelayDays: number;
   followUp3DelayDays: number;
   followUp4DelayDays: number;
+  /** Working days after which an unaccepted invitation is withdrawn; null = never. */
+  withdrawAfterWorkingDays: number | null;
   accounts: LinkedInAccount[];
   totalLeads: number;
   statusCounts: Record<string, number>;

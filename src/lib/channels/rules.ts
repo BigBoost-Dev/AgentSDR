@@ -172,6 +172,18 @@ export const CHANNEL_RULES = {
       warning: "Large bursts look automated; keep runs small and frequent.",
     },
     {
+      key: "inviteWithdrawalsPerRun",
+      kind: "range",
+      label: "Invitation withdrawals per run",
+      help: "Campaigns can withdraw an invitation that is still unaccepted after some working days. Each run withdraws a random number in this range, spaced by the delay between invitations.",
+      unit: "withdrawals",
+      default: [2, 4],
+      min: 1,
+      max: 20,
+      safe: { above: 8 },
+      warning: "Many withdrawals in one burst look automated.",
+    },
+    {
       key: "inviteDelaySeconds",
       kind: "range",
       label: "Delay between invitations",

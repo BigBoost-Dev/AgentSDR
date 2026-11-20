@@ -38,6 +38,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             followUp2DelayDays: campaigns.followUp2DelayDays,
             followUp3DelayDays: campaigns.followUp3DelayDays,
             followUp4DelayDays: campaigns.followUp4DelayDays,
+            withdrawAfterWorkingDays: campaigns.withdrawAfterWorkingDays,
           })
           .from(campaigns)
           .where(and(inOrg(campaigns), eq(campaigns.id, id)))
@@ -91,6 +92,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           followUp2DelayDays: campaign.followUp2DelayDays,
           followUp3DelayDays: campaign.followUp3DelayDays,
           followUp4DelayDays: campaign.followUp4DelayDays,
+          withdrawAfterWorkingDays: campaign.withdrawAfterWorkingDays,
           accounts: campaignAccountRows,
           totalLeads,
           statusCounts,

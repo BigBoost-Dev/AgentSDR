@@ -11,7 +11,7 @@ import {
   type CampaignStatus,
 } from "@/lib/linkedin/schema";
 import { linkedinSequenceError, normalizeLinkedinSequence } from "@/lib/linkedin/campaignSequence";
-import { parseSequenceDelays } from "@/lib/linkedin/sequenceTiming";
+import { parseSequenceDelays, parseWithdrawAfterWorkingDays } from "@/lib/linkedin/sequenceTiming";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 
 const ACCOUNT_SELECT = {
@@ -122,6 +122,10 @@ export async function POST(req: NextRequest) {
       if (!delays.ok) {
         return NextResponse.json({ ok: false, error: delays.error }, { status: 400 });
       }
+      const withdrawAfter = parseWithdrawAfterWorkingDays(body);
+      if (!withdrawAfter.ok) {
+        return NextResponse.json({ ok: false, error: withdrawAfter.error }, { status: 400 });
+      }
 
       if (ids.length) {
         const connected = await db
@@ -149,6 +153,8 @@ export async function POST(req: NextRequest) {
             followUp3Message: sequence.followUp3Message || null,
             followUp4Message: sequence.followUp4Message || null,
             ...delays.delays,
+            // null (or absent) = never withdraw an unaccepted invitation.
+            withdrawAfterWorkingDays: withdrawAfter.value,
             updatedAt: new Date(),
           })
           .returning();

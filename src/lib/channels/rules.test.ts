@@ -19,7 +19,7 @@ describe("registry", () => {
   test("defaults reproduce today's hardcoded behaviour", () => {
     expect(defaultValues("email")).toMatchObject({ dailySendLimit: 30, sendGapMinutes: [18, 24] });
     expect(defaultValues("linkedin")).toMatchObject({
-      invitesPerDayPremium: 30, invitesPerDayFree: 5, invitesPerRun: [3, 4], inviteDelaySeconds: [30, 60],
+      invitesPerDayPremium: 30, invitesPerDayFree: 5, invitesPerRun: [3, 4], inviteWithdrawalsPerRun: [2, 4], inviteDelaySeconds: [30, 60],
       runGapMinutes: [30, 60], followUpsPerRun: [3, 6], profileLookupsPerRun: [4, 8], searchLeadsPerDay: 400,
     });
     expect(defaultValues("whatsapp")).toEqual({ sendingHours: null, warmupHours: 24, newChatsPerDay: 25, secondsBetweenSends: 10, crmFollowUpGapMinutes: 30, callsPerDay: 30, callWarmupDays: 14, callGapMinutes: [3, 6], callingHours: { timezone: "Asia/Kolkata", days: [1, 2, 3, 4, 5, 6], start: "12:00", end: "19:00" } });

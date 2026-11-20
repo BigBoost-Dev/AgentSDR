@@ -70,6 +70,30 @@ export function parseSequenceDelays(input: Record<string, unknown>): SequenceDel
   return { ok: true, delays };
 }
 
+/** Bounds for "withdraw an unaccepted invite after N working days"; mirrored by "Campaign_withdraw_after_chk". */
+export const WITHDRAW_AFTER_BOUNDS = { min: 1, max: 60 } as const;
+
+export type WithdrawAfterResult =
+  /** `present` is false when the request did not mention the field (keep the stored value). */
+  | { ok: true; present: boolean; value: number | null }
+  | { ok: false; error: string };
+
+/**
+ * Reads `withdrawAfterWorkingDays` from a request body. Absent = not mentioned; null or ""
+ * = never withdraw; otherwise a whole number of working days from 1 to 60.
+ */
+export function parseWithdrawAfterWorkingDays(input: Record<string, unknown>): WithdrawAfterResult {
+  const raw = input.withdrawAfterWorkingDays;
+  if (raw === undefined) return { ok: true, present: false, value: null };
+  if (raw === null || (typeof raw === "string" && raw.trim() === "")) return { ok: true, present: true, value: null };
+  const value = typeof raw === "string" ? Number(raw) : raw;
+  const { min, max } = WITHDRAW_AFTER_BOUNDS;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `Withdraw after must be empty (never) or a whole number of working days from ${min} to ${max}` };
+  }
+  return { ok: true, present: true, value };
+}
+
 /** Fills the gaps in a partial set of delays with the defaults. */
 export function withDefaultDelays(delays: Partial<Record<SequenceDelayField, number | null | undefined>> | null | undefined): SequenceDelays {
   const result = { ...DEFAULT_SEQUENCE_DELAYS };

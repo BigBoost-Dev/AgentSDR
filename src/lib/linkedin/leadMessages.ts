@@ -70,7 +70,7 @@ export const sentAtForField = (
       return lead.requestSentAt;
     case "acceptanceMessage":
       return lead.acceptMessageSentAt ??
-        (lead.status !== "PENDING" && lead.status !== "REQUEST_SENT" ? "sent" : null);
+        (lead.status !== "PENDING" && lead.status !== "REQUEST_SENT" && lead.status !== "WITHDRAWN" ? "sent" : null);
     case "followUp1Message":
       return lead.followUp1SentAt;
     case "followUp2Message":

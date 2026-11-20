@@ -1,7 +1,7 @@
 # Plan: LinkedIn sequence timing, invite withdrawal and email hand-off
 
 - Track: Sales Automation, lender outbound (vault `Sales-Automation`)
-- Status: approved (Part 1 in progress)
+- Status: approved (Part 2 in progress)
 - Approved by VJ: 2026-11-20 ("approved for now", with Unipile kept)
 - Branch: `feat/lender-flow` in BigBoost-Dev/AgentSDR (each part later cherry-picked onto `upstream/main` as its own PR to Kandid-ai/AgentSDR)   PR: -
 
@@ -38,7 +38,7 @@ Part 1, timing and follow-up 4:
 
 Part 2, invite withdrawal:
 - `scripts/add-linkedin-invite-withdrawal.ts` (enum value `WITHDRAWN` on "LeadStatus"; `withdrawAfterWorkingDays`; `Lead.inviteWithdrawnAt`)
-- `src/services/unipile.service.ts` (`cancelInvitation` via SDK `users.cancelInvitationSent`; `findSentInvitationId` fallback)
+- `src/services/unipile.service.ts` (`cancelInvitation` via SDK `users.cancelInvitationSent`; `listSentInvitations` for the pending list)
 - `src/lib/linkedin/workingHours.ts` (new `workingDaysElapsed`, in the account's time zone and work days)
 - `src/functions/withdrawInvitations.ts` (new), called from `src/jobs/runOutreach.ts` after `sendInvitations`
 - `src/lib/channels/rules.ts` (Sending rule `inviteWithdrawalsPerRun`, default 2 to 4)
@@ -56,7 +56,8 @@ Part 3, email hand-off:
 1. Part 1, then Part 2, then Part 3; each is shippable alone and keeps today's behaviour when its settings are off.
 2. Each part: migration and Drizzle schema together, engine change, API, minimal UI, docs and CHANGELOG, tests, `bun run db:schema:dump`.
 3. Hand-off transaction order: take `lockPersonContactPolicyScope(tx, personId)` first (reply ingest takes the same lock), claim the lead with `emailHandoffAt IS NULL`, re-check for a late accept (WITHDRAWN with a Connection row goes back to REQUEST_SENT), run the guards (DNC, replied, active in another email campaign, no email), enroll, write the result.
-4. Withdrawal: claim (status WITHDRAWN) and commit before calling Unipile; on "cancelled" or "gone" keep it; on any other error set it back to REQUEST_SENT and count a retry (max 3). Before cancelling, check the profile is not already first-degree (no accept poll exists).
+4. Withdrawal: read the account's pending sent invitations once per run (pages of 100, max 10). Listed: claim (status WITHDRAWN) and commit, then cancel that id; "gone" releases with a retry. Not listed in a complete list: one profile check (first-degree creates the Connection row for the accept sweep; not first-degree marks WITHDRAWN without a cancel; unknown counts a retry). List incomplete: use the stored invitation id, never mark WITHDRAWN without one. Transient errors (429, 5xx, no HTTP status) stop the run without a retry; other lead-specific errors count a retry (max 3). Profile checks and cancels both count toward `inviteWithdrawalsPerRun`.
+4a. Accept after a withdrawal enters the accept flow only within 2 days of `inviteWithdrawnAt` (webhook and missedAcceptances sweep); later ones stay WITHDRAWN for a human. The invitation note echoing into the chat of a WITHDRAWN lead is not a reply.
 5. Deploy to the VPS only after VJ's OK: run the three migration scripts, rebuild, then set the settings on our campaign.
 
 ## Tests that prove it

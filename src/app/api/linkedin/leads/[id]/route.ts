@@ -154,6 +154,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ...templates,
         renderedTemplates,
         requestSentAt: lead.requestSentAt?.toISOString() ?? null,
+        inviteWithdrawnAt: lead.inviteWithdrawnAt?.toISOString() ?? null,
         acceptMessageSentAt: lead.acceptMessageSentAt?.toISOString() ?? null,
         followUp1SentAt: lead.followUp1SentAt?.toISOString() ?? null,
         followUp2SentAt: lead.followUp2SentAt?.toISOString() ?? null,

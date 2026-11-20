@@ -56,7 +56,7 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
   const [type, setType] = useState<"REGULAR" | "PERSONAL">("REGULAR");
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [leadCount, setLeadCount] = useState(0);
-  const [sequence, setSequence] = useState<LinkedinSequenceSettings>({ ...EMPTY_LINKEDIN_SEQUENCE, ...DEFAULT_SEQUENCE_DELAYS });
+  const [sequence, setSequence] = useState<LinkedinSequenceSettings>({ ...EMPTY_LINKEDIN_SEQUENCE, ...DEFAULT_SEQUENCE_DELAYS, withdrawAfterWorkingDays: null });
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showPeople, setShowPeople] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -336,6 +336,14 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
                       </li>
                     ))}
                   </ul>
+                  <p className="px-3 pb-2 pt-3 text-paragraph-sm text-text-sub-600">
+                    Unaccepted invitation:{" "}
+                    <span className="text-text-strong-950">
+                      {sequence.withdrawAfterWorkingDays === null
+                        ? "never withdrawn"
+                        : `withdrawn after ${sequence.withdrawAfterWorkingDays} working day${sequence.withdrawAfterWorkingDays === 1 ? "" : "s"}`}
+                    </span>
+                  </p>
                 </div>
                 {!canLaunch && <p className="mt-4 rounded-xl bg-warning-lighter p-3 text-paragraph-sm text-warning-dark">Add at least one lead and one sender before launching. You can save it paused and finish later.</p>}
                 <WizardFooter error={error} onBack={() => setStep(2)} busy={busy} secondaryLabel="Save paused" onSecondary={() => void finish("PAUSED")} nextLabel="Launch campaign" onNext={() => void finish("ACTIVE")} nextDisabled={!canLaunch} nextIcon={Rocket} />

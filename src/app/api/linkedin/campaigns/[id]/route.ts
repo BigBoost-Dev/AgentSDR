@@ -19,7 +19,7 @@ import {
   linkedinSequenceError,
   normalizeLinkedinSequence,
 } from "@/lib/linkedin/campaignSequence";
-import { parseSequenceDelays, type SequenceDelays } from "@/lib/linkedin/sequenceTiming";
+import { parseSequenceDelays, parseWithdrawAfterWorkingDays, type SequenceDelays } from "@/lib/linkedin/sequenceTiming";
 
 const ACCOUNT_SELECT = {
   id: linkedInAccounts.id,
@@ -144,6 +144,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp2DelayDays: campaign.followUp2DelayDays,
         followUp3DelayDays: campaign.followUp3DelayDays,
         followUp4DelayDays: campaign.followUp4DelayDays,
+        withdrawAfterWorkingDays: campaign.withdrawAfterWorkingDays,
         accounts,
         totalLeads: campaignLeads.length,
         statusCounts,
@@ -185,6 +186,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!delays.ok) {
         return NextResponse.json({ ok: false, error: delays.error }, { status: 400 });
       }
+      const withdrawAfter = parseWithdrawAfterWorkingDays(body);
+      if (!withdrawAfter.ok) {
+        return NextResponse.json({ ok: false, error: withdrawAfter.error }, { status: 400 });
+      }
 
       const sequenceInput = { invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message, followUp4Message };
       const hasSequenceUpdate = LINKEDIN_SEQUENCE_FIELDS.some((field) => sequenceInput[field] !== undefined);
@@ -206,7 +211,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       // Update scalar fields
-      const scalarUpdate: { name?: string; description?: string | null; status?: CampaignStatus; invitationMessage?: string | null; acceptanceMessage?: string | null; followUp1Message?: string | null; followUp2Message?: string | null; followUp3Message?: string | null; followUp4Message?: string | null } & Partial<SequenceDelays> = {
+      const scalarUpdate: { name?: string; description?: string | null; status?: CampaignStatus; invitationMessage?: string | null; acceptanceMessage?: string | null; followUp1Message?: string | null; followUp2Message?: string | null; followUp3Message?: string | null; followUp4Message?: string | null; withdrawAfterWorkingDays?: number | null } & Partial<SequenceDelays> = {
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description: description?.trim() || null }),
         ...(status !== undefined && { status: status as CampaignStatus }),
@@ -217,6 +222,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(followUp3Message !== undefined && { followUp3Message: followUp3Message?.trim() || null }),
         ...(followUp4Message !== undefined && { followUp4Message: followUp4Message?.trim() || null }),
         ...delays.delays,
+        // Absent keeps the stored value; null or "" turns withdrawal off.
+        ...(withdrawAfter.present && { withdrawAfterWorkingDays: withdrawAfter.value }),
       };
       // Prisma issued the UPDATE even with an empty `data` (it still bumps
       // @updatedAt); Drizzle rejects an empty `set`, so only skip when there is

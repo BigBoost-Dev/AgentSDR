@@ -47,6 +47,7 @@ const STATUS_VARIANTS: Record<string, "default" | "secondary" | "success" | "war
   COMPLETED: "secondary",
   REPLIED: "purple",
   FAILED: "destructive",
+  WITHDRAWN: "muted",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -60,6 +61,7 @@ const STATUS_LABELS: Record<string, string> = {
   COMPLETED: "Completed",
   REPLIED: "Replied",
   FAILED: "Failed",
+  WITHDRAWN: "Invite withdrawn",
 };
 
 function Avatar({ src, name }: { src: string | null; name: string }) {

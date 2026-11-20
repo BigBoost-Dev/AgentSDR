@@ -88,6 +88,19 @@ For example, an acceptance delay of 1 with follow-up delays of 3, 4, 4 and 7 sen
 
 With an acceptance delay, a lead that accepts shows as **Connected** until the acceptance message is due. If the lead replies in that time, the reply is recorded, the lead becomes **Replied** and nothing more is sent. A campaign with no delays set keeps the behaviour described in the first table. The setting applies to leads already in the campaign, from their next step on.
 
+### Withdraw unaccepted invitations
+
+On the **Sequence** tab, **Withdraw an unaccepted invite after [n] working days** withdraws a connection request that is still pending after `n` working days (1 to 60). Leave it empty, the default, to never withdraw.
+
+- **Working days** are counted in the sending account's time zone and on its work days (or the organization's working hours; Mon to Sat in Asia/Kolkata when none are set). The day the request was sent is day 0 and does not count. With Mon to Fri work days, a request sent on Thursday has 1 working day on Friday, 2 on Monday and 4 on Wednesday. Set the account's work days to Mon to Fri if Saturday should not count.
+- **Pace.** Withdrawals run after the invitations in each outreach run, inside the account's working hours, at most **Invitation withdrawals per run** (Settings, LinkedIn, Sending rules; default 2 to 4), spaced by the delay between invitations. They stop for the run when LinkedIn reports a limit.
+- **What happens to the lead.** It becomes **Invite withdrawn** (shown with the date on the lead panel), is not invited again by that account, and no message is sent to it. A message from the person counts as a reply and stops everything.
+- **How it finds the invitation.** Once per run, when something is due, AgentSDR reads the account's list of pending sent invitations (up to 1,000). A due lead that is on the list is claimed and that invitation is cancelled. A lead that is not on a complete list is no longer pending, so one profile check decides: already a connection (the accept was never recorded) creates the connection so the normal accept flow runs; not a connection (withdrawn by hand or declined) is marked **Invite withdrawn** without a cancel call; unknown is retried later. If the list is too long to read in full, the stored invitation id is used, and a lead with no stored id is never marked withdrawn (it needs a manual check).
+- **Pace.** Every profile check and every cancel counts toward **Invitation withdrawals per run**.
+- **Accepted at the same moment.** If the accept and the withdrawal cross, the lead carries on as an accept and the acceptance message goes out as usual, but only within **2 days** of the withdrawal. A later accept is recorded as a connection and the lead stays **Invite withdrawn** for you to handle, with a warning in the job log. A note from the invitation arriving in the new chat is not counted as a reply.
+- **Failures.** A failure that is about the lead is retried on later runs, up to 3 times, then the lead is left as **Request Sent**. A temporary failure (rate limit, server error, network) stops the run for that account and does not use up a retry.
+- LinkedIn may stop you inviting the same person again for a while after a withdrawal.
+
 <Warning>
 The connection request note is limited to 300 characters. A lead whose request, after merge fields are filled in, is longer than 300 is marked **Failed** and is not sent. The preview warns when a rendered invitation is too long, so preview a lead with a long name or company.
 </Warning>
@@ -112,6 +125,7 @@ The defaults, all editable in [Sending rules](/workspace/sending-rules):
 | Invitations per day, Premium or Sales Navigator | 30 |
 | Invitations per day, free account | 5 |
 | Invitations per run | 3 to 4 |
+| Invitation withdrawals per run | 2 to 4 |
 | Delay between invitations | 30 to 60 seconds |
 | Rest between runs | 30 to 60 minutes |
 | Follow-up messages per run | 3 to 6 |
@@ -137,6 +151,7 @@ The **Leads** tab filters by status:
 | --- | --- |
 | **Pending** | Waiting for a profile lookup or a connection request. |
 | **Request Sent** | The connection request went out. |
+| **Invite withdrawn** | The request was still unaccepted after the campaign's withdraw-after setting and was withdrawn. |
 | **Connected** | The lead accepted and the acceptance message is waiting out the campaign's acceptance delay. |
 | **Accepted** | The lead accepted and the acceptance message was handled. |
 | **Follow-up 1**, **2**, **3** | That follow-up has been sent, and a later one is still to come. |

@@ -2,6 +2,7 @@ import { UnipileClient } from "unipile-node-sdk";
 import axios from "axios";
 import { requirePlatformCredentials } from "@/lib/platform/credentials";
 import { serializeError } from "@/lib/linkedin/serializeError";
+import { firstDegreeFromProfile, isInvitationGoneError } from "@/lib/linkedin/inviteWithdrawal";
 import { inferLinkedinApi, linkedinLookupIdentifier, normalizeEmail, normalizeLinkedinSlug, type LinkedinApiHint } from "@/lib/leads/identity";
 
 let _client: { key: string; client: UnipileClient } | null = null;
@@ -155,6 +156,61 @@ export const sendConnectionRequest = async (
 ): Promise<string | null> => {
   const res = await (await getUnipileClient()).users.sendInvitation({ account_id: accountId, provider_id: providerId, message });
   return invitationResponseId(res);
+};
+
+// Withdraw a pending connection request. A 404 means the invitation no longer
+// exists (already withdrawn, accepted, declined or expired), reported as "gone";
+// any other failure is rethrown for the caller to decide.
+export const cancelInvitation = async (
+  accountId: string,
+  invitationId: string
+): Promise<"cancelled" | "gone"> => {
+  try {
+    await (await getUnipileClient()).users.cancelInvitationSent({ account_id: accountId, invitation_id: invitationId });
+    return "cancelled";
+  } catch (err) {
+    if (isInvitationGoneError(err)) return "gone";
+    throw err;
+  }
+};
+
+const SENT_INVITATIONS_PAGE_SIZE = 100;
+const SENT_INVITATIONS_MAX_PAGES = 10;
+
+// Reads the account's pending sent invitations (pages of 100, at most 10 pages) into
+// a map of invited member provider id -> invitation id. `complete` is false when the
+// list was longer than what was read, so a missing person is then not proof of "no
+// pending invitation".
+export const listSentInvitations = async (
+  accountId: string
+): Promise<{ byProvider: Map<string, string>; complete: boolean }> => {
+  const client = await getUnipileClient();
+  const byProvider = new Map<string, string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < SENT_INVITATIONS_MAX_PAGES; page += 1) {
+    const response = await client.users.getAllInvitationsSent({
+      account_id: accountId,
+      limit: SENT_INVITATIONS_PAGE_SIZE,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const item of response.items) {
+      if (item.invited_user_id && !byProvider.has(item.invited_user_id)) byProvider.set(item.invited_user_id, item.id);
+    }
+    if (!response.cursor) return { byProvider, complete: true };
+    cursor = response.cursor;
+  }
+  return { byProvider, complete: false };
+};
+
+// Is this person already a first-degree connection of the account? Read from the
+// raw Unipile profile (`network_distance` / `is_relationship`). null = the profile
+// does not say, so the caller must not assume either way.
+export const isFirstDegreeConnection = async (
+  accountId: string,
+  providerId: string
+): Promise<boolean | null> => {
+  const raw = await (await getUnipileClient()).users.getProfile({ account_id: accountId, identifier: providerId });
+  return firstDegreeFromProfile(raw);
 };
 
 // Get all current connections for an account and return ones that match our leads

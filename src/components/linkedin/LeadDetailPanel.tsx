@@ -41,6 +41,7 @@ export const LEAD_STATUS_VARIANTS: Record<
   COMPLETED: "secondary",
   REPLIED: "purple",
   FAILED: "destructive",
+  WITHDRAWN: "muted",
 };
 
 export const LEAD_STATUS_LABELS: Record<string, string> = {
@@ -54,6 +55,7 @@ export const LEAD_STATUS_LABELS: Record<string, string> = {
   COMPLETED: "Completed",
   REPLIED: "Replied",
   FAILED: "Failed",
+  WITHDRAWN: "Invite withdrawn",
 };
 
 const MESSAGE_TYPE_LABEL: Record<string, string> = {
@@ -96,6 +98,7 @@ export type LeadDetail = {
   followUp4Message: string | null;
   renderedTemplates: Record<LeadMessageField, string | null>;
   requestSentAt: string | null;
+  inviteWithdrawnAt: string | null;
   acceptMessageSentAt: string | null;
   followUp1SentAt: string | null;
   followUp2SentAt: string | null;
@@ -536,6 +539,7 @@ export function LeadDetailPanel({
                   />
                   <DetailRow label="Added" value={fmt(lead.createdAt)} />
                   <DetailRow label="Invite sent" value={fmt(lead.requestSentAt)} />
+                  {lead.inviteWithdrawnAt && <DetailRow label="Invite withdrawn" value={fmt(lead.inviteWithdrawnAt)} />}
                   <DetailRow
                     label="Accepted"
                     value={fmt(lead.acceptMessageSentAt ?? lead.connection?.connectedAt ?? null)}

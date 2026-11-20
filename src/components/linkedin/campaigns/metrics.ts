@@ -7,7 +7,8 @@ import type * as Badge from "@/components/alignui/badge";
  * A lead's status is where it is now, not a history, so the cumulative
  * stages are sums of every status at or past them:
  * - accepted: connected, messaged, any follow-up, completed or replied
- * - invited: accepted plus those still waiting on the invitation
+ * - invited: accepted plus those still waiting on the invitation, plus those whose
+ *   unaccepted invitation we withdrew
  *
  * Reply rate is replied / accepted — the same definition as the LinkedIn
  * view on Analytics — because a lead can only reply once connected.
@@ -21,6 +22,8 @@ export type CampaignFunnel = {
   replied: number;
   failed: number;
   cancelled: number;
+  /** Invitations withdrawn after the campaign's "withdraw after N working days". */
+  withdrawn: number;
   invited: number;
   accepted: number;
   acceptanceRate: number | null;
@@ -40,8 +43,9 @@ export function campaignFunnel(s: Record<string, number>, totalLeads?: number): 
   const replied = n(s, "REPLIED");
   const failed = n(s, "FAILED");
   const cancelled = n(s, "CANCELLED");
+  const withdrawn = n(s, "WITHDRAWN");
   const accepted = inSequence + completed + replied;
-  const invited = awaiting + accepted;
+  const invited = awaiting + withdrawn + accepted;
   const total = totalLeads ?? Object.values(s).reduce((sum, v) => sum + v, 0);
   return {
     total,
@@ -52,6 +56,7 @@ export function campaignFunnel(s: Record<string, number>, totalLeads?: number): 
     replied,
     failed,
     cancelled,
+    withdrawn,
     invited,
     accepted,
     acceptanceRate: invited > 0 ? accepted / invited : null,
@@ -75,6 +80,7 @@ export const LEAD_STATUS: Record<string, { label: string; color: BadgeColor }> =
   REPLIED: { label: "Replied", color: "green" },
   FAILED: { label: "Failed", color: "red" },
   CANCELLED: { label: "Cancelled", color: "orange" },
+  WITHDRAWN: { label: "Invite withdrawn", color: "gray" },
 };
 
 export const CAMPAIGN_STATUS: Record<"ACTIVE" | "PAUSED", { label: string; color: BadgeColor }> = {

@@ -1,5 +1,5 @@
 import { isPlatformConnected } from "@/lib/platform/credentials";
-import { and, asc, eq, inArray, isNotNull, lt, ne, or, isNull, sql } from "drizzle-orm";
+import { and, asc, count as sqlCount, eq, inArray, isNotNull, lt, ne, or, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies, people } from "@/lib/leads/schema";
 import { personVariables } from "@/lib/leads/variables";
@@ -9,6 +9,7 @@ import { sendMessage } from "@/services/unipile.service";
 import type { LeadStatus, LinkedInAccount, MessageType } from "@/lib/linkedin/schema";
 import { processLeadAcceptance } from "@/lib/linkedin/acceptanceMessage";
 import { serializeError } from "@/lib/linkedin/serializeError";
+import { WITHDRAWN_ACCEPT_WINDOW_DAYS } from "@/lib/linkedin/inviteWithdrawal";
 import { MAX_LEAD_RETRIES } from "@/lib/linkedin/inviteRetry";
 import { recordFollowUpSendFailure } from "@/lib/linkedin/inviteRetry.server";
 import { isPersonDoNotContact } from "@/lib/crm/policies";
@@ -322,6 +323,20 @@ export const sendFollowUps = async (account: LinkedInAccount): Promise<void> => 
 // have synced the chat.
 const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> => {
   const nowIso = new Date().toISOString();
+  // WITHDRAWN leads with a Connection row but past the accept window are not touched; say so.
+  const [{ n: staleWithdrawn }] = await db
+    .select({ n: sqlCount() })
+    .from(leadsTable)
+    .innerJoin(connections, eq(connections.leadId, leadsTable.id))
+    .where(and(
+      inOrg(leadsTable),
+      eq(leadsTable.linkedinAccountId, account.id),
+      eq(leadsTable.status, "WITHDRAWN"),
+      sql`${leadsTable.inviteWithdrawnAt} < ${nowIso}::timestamp - ${WITHDRAWN_ACCEPT_WINDOW_DAYS}::int * interval '1 day'`
+    ));
+  if (staleWithdrawn > 0) {
+    console.warn(`[missedAcceptances] ${staleWithdrawn} WITHDRAWN lead(s) with a connection record are past the ${WITHDRAWN_ACCEPT_WINDOW_DAYS}-day accept window — left for manual handling`);
+  }
   // `connection: { isNot: null }` — an innerJoin expresses exactly that.
   const leads = (
     await db
@@ -352,6 +367,12 @@ const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> =>
           // CONNECTED, so a campaign without a delay is unaffected.
           or(
             eq(leadsTable.status, "REQUEST_SENT"),
+            // WITHDRAWN with a Connection row: the accept raced our invite withdrawal. Only within
+            // the window after the withdrawal; later ones are left for a human (warned below).
+            and(
+              eq(leadsTable.status, "WITHDRAWN"),
+              sql`${leadsTable.inviteWithdrawnAt} >= ${nowIso}::timestamp - ${WITHDRAWN_ACCEPT_WINDOW_DAYS}::int * interval '1 day'`
+            ),
             and(
               eq(leadsTable.status, "CONNECTED"),
               or(
@@ -369,7 +390,7 @@ const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> =>
       .limit(await followUpsPerRun())
   ).map((r) => ({ ...r.lead, acceptanceMessage: r.campaignAcceptanceMessage ?? r.lead.acceptanceMessage, acceptanceDelayDays: r.campaignAcceptanceDelayDays, connection: r.connection, linkedinUrl: r.person.linkedinUrl!, variables: personVariables(r.person, r.company) }));
 
-  console.log(`[missedAcceptances] Found ${leads.length} REQUEST_SENT or due CONNECTED lead(s) with a connection record`);
+  console.log(`[missedAcceptances] Found ${leads.length} REQUEST_SENT, WITHDRAWN or due CONNECTED lead(s) with a connection record`);
   if (leads.length === 0) return;
 
   for (const lead of leads) {

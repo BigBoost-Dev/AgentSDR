@@ -416,7 +416,7 @@ export async function ingestInboundReplyInTransaction(
     .where(and(
       inOrg(linkedinLeads),
       eq(linkedinLeads.personId, current.personId),
-      inArray(linkedinLeads.status, ["PENDING", "REQUEST_SENT", "CONNECTED", "ACCEPT_MESSAGE_SENT", "FOLLOW_UP_1_SENT", "FOLLOW_UP_2_SENT", "FOLLOW_UP_3_SENT"]),
+      inArray(linkedinLeads.status, ["PENDING", "REQUEST_SENT", "CONNECTED", "ACCEPT_MESSAGE_SENT", "FOLLOW_UP_1_SENT", "FOLLOW_UP_2_SENT", "FOLLOW_UP_3_SENT", "WITHDRAWN"]),
     ));
   if (whatsappEnrollments.length) {
     await tx.update(whatsappCampaignLeads).set({ status: "replied", repliedAt: now, nextSendAt: null, updatedAt: now })

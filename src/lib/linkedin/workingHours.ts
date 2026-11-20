@@ -81,6 +81,34 @@ export const isWithinWorkingHours = (
   return minutes >= startM || minutes < endM;
 };
 
+/** The calendar date of `date` in `timeZone`, as whole days since 1970-01-01 (so dates subtract and iterate without DST or UTC drift). */
+const localDayNumber = (date: Date, timeZone: string): number => {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(date);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return Math.floor(Date.UTC(part("year"), part("month") - 1, part("day")) / 86_400_000);
+};
+
+/**
+ * Working days elapsed between two instants: the number of calendar dates d, in the
+ * account's time zone, with localDate(from) < d <= localDate(to) whose weekday is a
+ * work day. The send day is day 0 and never counts, so an invite sent on a Thursday
+ * (Mon-Fri) has 1 elapsed on Friday, 2 on Monday. Time zone and work days come from
+ * `hours` (own or organization hours), defaulting to Asia/Kolkata and Mon-Sat.
+ * Returns 0 when `to` is not after `from`'s local date.
+ */
+export const workingDaysElapsed = (from: Date, to: Date, hours: WorkingHoursFields): number => {
+  const timeZone = hours.workTimezone || DEFAULT_WORK_TIMEZONE;
+  const workDays = new Set(parseWorkDays(hours.workDays));
+  const start = localDayNumber(from, timeZone);
+  const end = localDayNumber(to, timeZone);
+  let count = 0;
+  for (let day = start + 1; day <= end; day += 1) {
+    // Day 0 of the epoch (1970-01-01) was a Thursday (4).
+    if (workDays.has((((day + 4) % 7) + 7) % 7)) count += 1;
+  }
+  return count;
+};
+
 /**
  * The hours an account runs in: its own when it has them, otherwise the
  * organization's (Settings → LinkedIn → Sending rules), otherwise any time.

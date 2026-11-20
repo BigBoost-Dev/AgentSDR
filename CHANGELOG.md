@@ -22,6 +22,22 @@ Each release lists the database migrations it needs; see
   nothing. A lead that accepts during an acceptance delay shows as
   **Connected** and the message goes out when it is due. See
   `docs/linkedin/campaigns.mdx`.
+- **LinkedIn campaigns can withdraw an unaccepted invitation, 2026-11-20.**
+  A campaign setting, **Withdraw an unaccepted invite after [n] working
+  days** (1 to 60; empty = never, which is today's behaviour), on the Sequence
+  tab and in the campaign API (`withdrawAfterWorkingDays`). Working days are
+  counted in the sending account's time zone and work days; the send day is
+  day 0. Each outreach run withdraws up to the new Sending rule
+  **Invitation withdrawals per run** (default 2 to 4), spaced by the delay
+  between invitations. A withdrawn lead shows as **Invite withdrawn**, is
+  never re-invited by that account, and a message from it counts as a reply.
+  The account's pending sent invitations are read once per run; an invite no
+  longer on the list gets one profile check (accepted with no recorded accept
+  creates the connection for the normal accept flow; not connected is marked
+  withdrawn without a cancel call). If the invitation was accepted just as it
+  was withdrawn, the lead continues as an accept within 2 days of the
+  withdrawal; later accepts are left for a person. Temporary errors stop the
+  run without using a retry. See `docs/linkedin/campaigns.mdx`.
 
 ### Fixed
 
@@ -68,6 +84,10 @@ Each release lists the database migrations it needs; see
   columns and `Lead.acceptedAt`, and rebuilds `Message_automated_lead_type_uq` to cover
   `FOLLOW_UP_4`. Run it before deploying the code. It is idempotent and ends
   with a self-check that fails if the index is incomplete.
+- `bun run scripts/add-linkedin-invite-withdrawal.ts` adds `WITHDRAWN` to
+  `LeadStatus`, `Campaign.withdrawAfterWorkingDays` (with a CHECK),
+  `Lead.inviteWithdrawnAt` and `Lead.withdrawRetryCount`. Run it before
+  deploying the code. It is idempotent and ends with a self-check.
 
 ## [0.3.1] - 2026-10-08
 

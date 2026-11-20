@@ -22,6 +22,8 @@ import {
   SEQUENCE_DELAY_BOUNDS,
   SEQUENCE_DELAY_FIELDS,
   SEQUENCE_DELAY_LABELS,
+  WITHDRAW_AFTER_BOUNDS,
+  parseWithdrawAfterWorkingDays,
   withDefaultDelays,
   type SequenceDelayField,
   type SequenceDelays,
@@ -55,7 +57,7 @@ export function LinkedInSequenceEditor({
   saveLabel = "Save sequence",
 }: {
   campaignId: string;
-  initialSequence?: Partial<Record<LinkedinSequenceField, string | null>> & Partial<Record<SequenceDelayField, number | null>>;
+  initialSequence?: Partial<Record<LinkedinSequenceField, string | null>> & Partial<Record<SequenceDelayField, number | null>> & { withdrawAfterWorkingDays?: number | null };
   onSaved?: (sequence: LinkedinSequenceSettings) => void;
   saveLabel?: string;
 }) {
@@ -67,6 +69,8 @@ export function LinkedInSequenceEditor({
     const initial = withDefaultDelays(initialSequence);
     return Object.fromEntries(SEQUENCE_DELAY_FIELDS.map((field) => [field, String(initial[field])])) as Record<SequenceDelayField, string>;
   });
+  // Empty = never withdraw an unaccepted invitation. Kept as text so it can be cleared while typing.
+  const [withdrawInput, setWithdrawInput] = useState(() => String(initialSequence?.withdrawAfterWorkingDays ?? ""));
   const [selected, setSelected] = useState(0);
   const [fields, setFields] = useState<MergeField[]>(DEFAULT_FIELDS);
   const [leads, setLeads] = useState<PreviewLead[]>([]);
@@ -101,6 +105,10 @@ export function LinkedInSequenceEditor({
     if (blank) return `${SEQUENCE_DELAY_LABELS[blank]} must be a whole number of days`;
     return linkedinSequenceDelaysError(delayInputs);
   }, [delayInputs]);
+  const withdrawError = useMemo(() => {
+    const parsed = parseWithdrawAfterWorkingDays({ withdrawAfterWorkingDays: withdrawInput });
+    return parsed.ok ? null : parsed.error;
+  }, [withdrawInput]);
   // Timing text follows the numbers being typed; an invalid entry falls back to the default for the label only.
   const steps = useMemo(() => {
     const typed = Object.fromEntries(
@@ -114,12 +122,18 @@ export function LinkedInSequenceEditor({
   }, [delayInputs]);
   const step = steps[selected]!;
   const stepDelayField = LINKEDIN_STEP_DELAY_FIELD[step.field];
-  const validationError = useMemo(() => linkedinSequenceError(sequence) ?? delayError, [sequence, delayError]);
+  const validationError = useMemo(() => linkedinSequenceError(sequence) ?? delayError ?? withdrawError, [sequence, delayError, withdrawError]);
 
   function updateDelay(field: SequenceDelayField, value: string) {
     setSaved(false);
     setError(null);
     setDelayInputs((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateWithdraw(value: string) {
+    setSaved(false);
+    setError(null);
+    setWithdrawInput(value);
   }
 
   function update(field: LinkedinSequenceField, value: string) {
@@ -142,8 +156,9 @@ export function LinkedInSequenceEditor({
   }
 
   async function save() {
-    const issue = linkedinSequenceError(sequence) ?? delayError;
+    const issue = linkedinSequenceError(sequence) ?? delayError ?? withdrawError;
     if (issue) { setError(issue); return; }
+    const withdrawAfterWorkingDays = withdrawInput.trim() === "" ? null : Number(withdrawInput);
     const delays = withDefaultDelays(Object.fromEntries(SEQUENCE_DELAY_FIELDS.map((field) => [field, Number(delayInputs[field])])));
     setSaving(true);
     setError(null);
@@ -151,14 +166,14 @@ export function LinkedInSequenceEditor({
       const response = await fetch(`/api/linkedin/campaigns/${campaignId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...sequence, ...delays }),
+        body: JSON.stringify({ ...sequence, ...delays, withdrawAfterWorkingDays }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(data.error ?? "Could not save sequence");
       const normalized = normalizeLinkedinSequence(sequence);
       setSequence(normalized);
       setSaved(true);
-      onSaved?.({ ...normalized, ...delays });
+      onSaved?.({ ...normalized, ...delays, withdrawAfterWorkingDays });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save sequence");
     } finally {
@@ -235,6 +250,27 @@ export function LinkedInSequenceEditor({
                 );
               })}
             </ol>
+            <div className="mt-2 border-t border-stroke-soft-200 px-2.5 pb-1.5 pt-3">
+              <label className="flex flex-wrap items-center gap-2 text-label-sm text-text-strong-950">
+                Withdraw an unaccepted invite after
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={WITHDRAW_AFTER_BOUNDS.min}
+                  max={WITHDRAW_AFTER_BOUNDS.max}
+                  step={1}
+                  value={withdrawInput}
+                  onChange={(event) => updateWithdraw(event.target.value)}
+                  placeholder="never"
+                  aria-label="Working days before an unaccepted invitation is withdrawn (empty = never)"
+                  className="h-9 w-20 rounded-lg bg-bg-white-0 px-2.5 text-paragraph-sm tabular-nums text-text-strong-950 ring-1 ring-inset ring-stroke-soft-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                />
+                working days
+              </label>
+              <p className="mt-1.5 text-paragraph-xs text-text-sub-600">
+                Empty = never. The send day does not count; the account&apos;s work days and time zone decide what a working day is.
+              </p>
+            </div>
           </FramePanel>
         </Frame>
 

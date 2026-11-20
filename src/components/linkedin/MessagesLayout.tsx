@@ -108,6 +108,7 @@ const STATUS_LABEL: Record<string, string> = {
   COMPLETED: "Completed",
   REPLIED: "Replied",
   FAILED: "Failed",
+  WITHDRAWN: "Invite withdrawn",
 };
 
 /** Lead status → badge tone. Only outcomes wear a colour; the steps in between stay grey. */
@@ -135,7 +136,7 @@ const splitCategoryFilter = (value: string, categories: CrmCategoryOption[]) => 
   return { categoryKey: sub?.categoryKey ?? "", subcategoryId: value };
 };
 
-const ALL_STATUSES = ["PENDING", "REQUEST_SENT", "CONNECTED", "ACCEPT_MESSAGE_SENT", "FOLLOW_UP_1_SENT", "FOLLOW_UP_2_SENT", "FOLLOW_UP_3_SENT", "COMPLETED", "REPLIED", "FAILED"];
+const ALL_STATUSES = ["PENDING", "REQUEST_SENT", "CONNECTED", "ACCEPT_MESSAGE_SENT", "FOLLOW_UP_1_SENT", "FOLLOW_UP_2_SENT", "FOLLOW_UP_3_SENT", "COMPLETED", "REPLIED", "FAILED", "WITHDRAWN"];
 
 const TIME_PERIODS = [
   { label: "All time", days: null },

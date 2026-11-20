@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { campaigns, connections, leads, linkedInAccounts, webhookEvents } from "@/lib/linkedin/schema";
 import { getChatIdForUser } from "@/services/unipile.service";
 import { processLeadAcceptance } from "@/lib/linkedin/acceptanceMessage";
+import { isWithinWithdrawnAcceptWindow, WITHDRAWN_ACCEPT_WINDOW_DAYS } from "@/lib/linkedin/inviteWithdrawal";
 import { isMigrationControlPaused } from "@/lib/migration/controls";
 import { serializeError } from "@/lib/linkedin/serializeError";
 import { companies, people } from "@/lib/leads/schema";
@@ -161,7 +162,30 @@ async function handle(req: NextRequest, body: WebhookBody) {
       await finish("error");
       return response;
     }
-    const fallbackLeads = requestCandidates.length ? [] : await db
+    // The accept can race our invite withdrawal (the invitation was accepted just before or while
+    // we cancelled it): a WITHDRAWN lead is then handled like a REQUEST_SENT one. Looked up only
+    // when no REQUEST_SENT lead matches, so a re-invite in another campaign is never ambiguous.
+    const withdrawnCandidates = requestCandidates.length ? [] : await db
+      .select({ lead: leads, person: people, company: companies, campaignStatus: campaigns.status, campaignAcceptanceMessage: campaigns.acceptanceMessage, campaignAcceptanceDelayDays: campaigns.acceptanceDelayDays })
+      .from(leads)
+      .innerJoin(people, eq(leads.personId, people.id))
+      .leftJoin(companies, eq(people.companyId, companies.id))
+      .innerJoin(campaigns, eq(leads.campaignId, campaigns.id))
+      .where(and(
+        inOrg(leads),
+        eq(leads.providerId, senderProviderId),
+        eq(leads.linkedinAccountId, account.id),
+        eq(leads.status, "WITHDRAWN"),
+        isNull(leads.supersededByLeadId),
+      ))
+      .orderBy(desc(leads.requestSentAt), desc(leads.createdAt))
+      .limit(2);
+    if (withdrawnCandidates.length > 1) {
+      log.error(`Ambiguous provider/account match across ${withdrawnCandidates.length} WITHDRAWN Leads — no campaign state changed`);
+      await finish("error");
+      return response;
+    }
+    const fallbackLeads = requestCandidates.length || withdrawnCandidates.length ? [] : await db
       .select({ lead: leads, person: people, company: companies, campaignStatus: campaigns.status, campaignAcceptanceMessage: campaigns.acceptanceMessage, campaignAcceptanceDelayDays: campaigns.acceptanceDelayDays })
       .from(leads)
       .innerJoin(people, eq(leads.personId, people.id))
@@ -180,7 +204,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
       await finish("error");
       return response;
     }
-    const leadRow = requestCandidates[0] ?? fallbackLeads[0];
+    const leadRow = requestCandidates[0] ?? withdrawnCandidates[0] ?? fallbackLeads[0];
     const lead = leadRow ? { ...leadRow.lead, acceptanceMessage: leadRow.campaignAcceptanceMessage ?? leadRow.lead.acceptanceMessage, acceptanceDelayDays: leadRow.campaignAcceptanceDelayDays, ...personProfile(leadRow.person, leadRow.company), campaignStatus: leadRow.campaignStatus } : null;
     if (lead) {
       log.info(`Lead found in DB: ${lead.linkedinUrl} (status: ${lead.status})`);
@@ -248,8 +272,14 @@ async function handle(req: NextRequest, body: WebhookBody) {
       return response;
     }
 
-    if (lead.status !== "REQUEST_SENT") {
-      log.info(`Lead status is ${lead.status} (not REQUEST_SENT) — skipping acceptance to avoid double-send`);
+    if (lead.status !== "REQUEST_SENT" && lead.status !== "WITHDRAWN") {
+      log.info(`Lead status is ${lead.status} (not REQUEST_SENT or WITHDRAWN) — skipping acceptance to avoid double-send`);
+      await finish("skipped");
+      return response;
+    }
+    if (lead.status === "WITHDRAWN" && !isWithinWithdrawnAcceptWindow(lead.inviteWithdrawnAt, new Date())) {
+      // Only an accept that races the withdrawal continues as an accept; a later one needs a human.
+      log.warn(`Accept arrived more than ${WITHDRAWN_ACCEPT_WINDOW_DAYS} days after the invitation was withdrawn — connection recorded, lead left WITHDRAWN for manual handling`);
       await finish("skipped");
       return response;
     }
@@ -270,6 +300,10 @@ async function handle(req: NextRequest, body: WebhookBody) {
       account,
       (msg) => log.info(msg)
     );
+
+    if (lead.status === "WITHDRAWN") {
+      log.warn("The invitation was accepted after we withdrew it — handled as an accept");
+    }
 
     if (acceptanceResult === "blocked") {
       log.warn("Acceptance blocked by Person-global DNC; lead marked FAILED");

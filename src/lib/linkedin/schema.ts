@@ -85,6 +85,8 @@ export const leadStatusEnum = pgEnum("LeadStatus", [
   "FOLLOW_UP_3_SENT",
   "COMPLETED",
   "CANCELLED",
+  // Our pending invitation was cancelled after the campaign's withdraw-after window (not CANCELLED).
+  "WITHDRAWN",
 ]);
 
 export const messageTypeEnum = pgEnum("MessageType", [
@@ -169,6 +171,8 @@ export const campaigns = pgTable("Campaign", {
   followUp2DelayDays: integer("followUp2DelayDays").notNull().default(2),
   followUp3DelayDays: integer("followUp3DelayDays").notNull().default(3),
   followUp4DelayDays: integer("followUp4DelayDays").notNull().default(4),
+  /** Withdraw an invitation still unaccepted after this many working days; null = never. */
+  withdrawAfterWorkingDays: integer("withdrawAfterWorkingDays"),
   createdAt: timestamp("createdAt", { precision: 3, mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" })
     .notNull()
@@ -181,6 +185,8 @@ export const campaigns = pgTable("Campaign", {
       "Campaign_sequence_delays_chk",
       sql`${t.acceptanceDelayDays} BETWEEN 0 AND 30 AND ${t.followUp1DelayDays} BETWEEN 1 AND 60 AND ${t.followUp2DelayDays} BETWEEN 1 AND 60 AND ${t.followUp3DelayDays} BETWEEN 1 AND 60 AND ${t.followUp4DelayDays} BETWEEN 1 AND 60`,
     ),
+    // Mirrors the CHECK added by scripts/add-linkedin-invite-withdrawal.ts.
+    check("Campaign_withdraw_after_chk", sql`${t.withdrawAfterWorkingDays} IS NULL OR ${t.withdrawAfterWorkingDays} BETWEEN 1 AND 60`),
   ],
 );
 
@@ -237,6 +243,10 @@ export const leads = pgTable(
     /** When the accept was first handled; set as the lead moves REQUEST_SENT to CONNECTED, and the campaign's acceptance delay counts from it. */
     acceptedAt: timestamp("acceptedAt", { precision: 3, mode: "date" }),
     linkedinAccountId: text("linkedinAccountId"),
+    /** When we withdrew the pending invitation (status WITHDRAWN); cleared if the accept raced the withdrawal. */
+    inviteWithdrawnAt: timestamp("inviteWithdrawnAt", { precision: 3, mode: "date" }),
+    /** Failed withdraw attempts; the engine stops after 3. */
+    withdrawRetryCount: integer("withdrawRetryCount").notNull().default(0),
     createdAt: timestamp("createdAt", { precision: 3, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" })
       .notNull()
