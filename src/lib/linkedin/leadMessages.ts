@@ -18,7 +18,8 @@ export type LeadMessageField =
   | "acceptanceMessage"
   | "followUp1Message"
   | "followUp2Message"
-  | "followUp3Message";
+  | "followUp3Message"
+  | "followUp4Message";
 
 export const LEAD_MESSAGE_FIELDS: {
   key: LeadMessageField;
@@ -29,6 +30,7 @@ export const LEAD_MESSAGE_FIELDS: {
   { key: "followUp1Message", label: "Follow-up 1" },
   { key: "followUp2Message", label: "Follow-up 2" },
   { key: "followUp3Message", label: "Follow-up 3" },
+  { key: "followUp4Message", label: "Follow-up 4" },
 ];
 
 export const isMessageEditable = (messageKey: LeadMessageField, status: string): boolean => {
@@ -43,6 +45,9 @@ export const isMessageEditable = (messageKey: LeadMessageField, status: string):
       return (STATUS_RANK[status] ?? 0) < STATUS_RANK.FOLLOW_UP_2_SENT;
     case "followUp3Message":
       return (STATUS_RANK[status] ?? 0) < STATUS_RANK.FOLLOW_UP_3_SENT;
+    case "followUp4Message":
+      // Follow-up 4 is sent from FOLLOW_UP_3_SENT, so it stays editable through that status.
+      return (STATUS_RANK[status] ?? 0) <= STATUS_RANK.FOLLOW_UP_3_SENT;
     default:
       return false;
   }
@@ -56,6 +61,7 @@ export const sentAtForField = (
     followUp1SentAt: string | null;
     followUp2SentAt: string | null;
     followUp3SentAt: string | null;
+    followUp4SentAt: string | null;
     status: string;
   }
 ): string | null => {
@@ -71,6 +77,8 @@ export const sentAtForField = (
       return lead.followUp2SentAt;
     case "followUp3Message":
       return lead.followUp3SentAt;
+    case "followUp4Message":
+      return lead.followUp4SentAt;
     default:
       return null;
   }

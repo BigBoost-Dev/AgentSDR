@@ -44,6 +44,12 @@ type Campaign = {
   followUp1Message: string | null;
   followUp2Message: string | null;
   followUp3Message: string | null;
+  followUp4Message: string | null;
+  acceptanceDelayDays: number;
+  followUp1DelayDays: number;
+  followUp2DelayDays: number;
+  followUp3DelayDays: number;
+  followUp4DelayDays: number;
   accounts: LinkedInAccount[];
   totalLeads: number;
   statusCounts: Record<string, number>;
@@ -56,13 +62,14 @@ function createdLabel(iso: string): string {
 
 type TabId = "overview" | "leads" | "sequence";
 
-function sequenceStepsBuilt(campaign: Pick<Campaign, "invitationMessage" | "acceptanceMessage" | "followUp1Message" | "followUp2Message" | "followUp3Message">) {
+function sequenceStepsBuilt(campaign: Pick<Campaign, "invitationMessage" | "acceptanceMessage" | "followUp1Message" | "followUp2Message" | "followUp3Message" | "followUp4Message">) {
   return [
     campaign.invitationMessage,
     campaign.acceptanceMessage,
     campaign.followUp1Message,
     campaign.followUp2Message,
     campaign.followUp3Message,
+    campaign.followUp4Message,
   ].filter(Boolean).length;
 }
 
@@ -153,7 +160,7 @@ export function CampaignDetailClient({
             )}
           </>
         }
-        description={<span suppressHydrationWarning>{`Created ${createdLabel(campaign.createdAt)} · ${steps} of 5 sequence steps written${campaign.description ? ` · ${campaign.description}` : ""}`}</span>}
+        description={<span suppressHydrationWarning>{`Created ${createdLabel(campaign.createdAt)} · ${steps} of 6 sequence steps written${campaign.description ? ` · ${campaign.description}` : ""}`}</span>}
         actions={
           <>
             <span className="mr-1 hidden sm:inline-flex">

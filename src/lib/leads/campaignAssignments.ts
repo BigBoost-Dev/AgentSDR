@@ -65,6 +65,7 @@ export type LinkedinSequenceInput = {
   followUp1Message?: string | null;
   followUp2Message?: string | null;
   followUp3Message?: string | null;
+  followUp4Message?: string | null;
 };
 
 export async function addPeopleToLinkedinCampaign(

@@ -61,6 +61,8 @@ export type CampaignLead = {
   followUp2SentAt: string | null;
   followUp3Message: string | null;
   followUp3SentAt: string | null;
+  followUp4Message: string | null;
+  followUp4SentAt: string | null;
   linkedinAccountId: string | null;
   linkedInAccount: LinkedInAccount | null;
   createdAt: string;

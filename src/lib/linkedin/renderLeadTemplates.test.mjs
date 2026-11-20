@@ -9,6 +9,7 @@ describe("renderLeadTemplates", () => {
       followUp1Message: "Following up with {{firstName}}",
       followUp2Message: null,
       followUp3Message: null,
+      followUp4Message: null,
     }, {
       firstName: "Varun",
       company: "Dr Sharda Ayurveda",
@@ -18,6 +19,7 @@ describe("renderLeadTemplates", () => {
       followUp1Message: "Following up with Varun",
       followUp2Message: null,
       followUp3Message: null,
+      followUp4Message: null,
     });
   });
 });

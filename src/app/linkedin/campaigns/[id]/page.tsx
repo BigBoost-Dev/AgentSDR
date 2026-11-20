@@ -32,6 +32,12 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             followUp1Message: campaigns.followUp1Message,
             followUp2Message: campaigns.followUp2Message,
             followUp3Message: campaigns.followUp3Message,
+            followUp4Message: campaigns.followUp4Message,
+            acceptanceDelayDays: campaigns.acceptanceDelayDays,
+            followUp1DelayDays: campaigns.followUp1DelayDays,
+            followUp2DelayDays: campaigns.followUp2DelayDays,
+            followUp3DelayDays: campaigns.followUp3DelayDays,
+            followUp4DelayDays: campaigns.followUp4DelayDays,
           })
           .from(campaigns)
           .where(and(inOrg(campaigns), eq(campaigns.id, id)))
@@ -79,6 +85,12 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           followUp1Message: campaign.followUp1Message,
           followUp2Message: campaign.followUp2Message,
           followUp3Message: campaign.followUp3Message,
+          followUp4Message: campaign.followUp4Message,
+          acceptanceDelayDays: campaign.acceptanceDelayDays,
+          followUp1DelayDays: campaign.followUp1DelayDays,
+          followUp2DelayDays: campaign.followUp2DelayDays,
+          followUp3DelayDays: campaign.followUp3DelayDays,
+          followUp4DelayDays: campaign.followUp4DelayDays,
           accounts: campaignAccountRows,
           totalLeads,
           statusCounts,

@@ -1,6 +1,7 @@
 import { inferLinkedinApi, normalizeLinkedinSlug } from "../leads/identity";
 import { MAX_LEAD_RETRIES } from "./inviteRetry";
 import { fillTemplate } from "../outreach/render";
+import { DAY_MS, withDefaultDelays, type SequenceDelays } from "./sequenceTiming";
 
 export const LINKEDIN_TERMINAL_STATUSES = new Set(["REPLIED", "FAILED", "CANCELLED", "COMPLETED"]);
 
@@ -23,6 +24,9 @@ export type LinkedinParityLead = {
   acceptMessageSentAt: Date | null;
   followUp1SentAt: Date | null;
   followUp2SentAt: Date | null;
+  followUp3SentAt?: Date | null;
+  /** The campaign's follow-up waits in days; absent fields use the defaults (the old 24 / 48 / 72 hours). */
+  campaignDelays?: Partial<SequenceDelays> | null;
   connectionChatId: string | null;
   leadTemplates: Record<string, string | null>;
   campaignTemplates: Record<string, string | null>;
@@ -79,10 +83,12 @@ export function legacyNextAction(lead: LinkedinParityLead, now: Date): NextActio
     const template = legacyTemplate(lead, "acceptanceMessage");
     return hasText(template) ? action("send_acceptance", template) : action("advance_acceptance", null);
   }
+  const delays = withDefaultDelays(lead.campaignDelays);
   const stages = [
-    ["ACCEPT_MESSAGE_SENT", "followUp1Message", lead.acceptMessageSentAt, 24 * 60 * 60 * 1000, "send_follow_up_1"],
-    ["FOLLOW_UP_1_SENT", "followUp2Message", lead.followUp1SentAt, 48 * 60 * 60 * 1000, "send_follow_up_2"],
-    ["FOLLOW_UP_2_SENT", "followUp3Message", lead.followUp2SentAt, 72 * 60 * 60 * 1000, "send_follow_up_3"],
+    ["ACCEPT_MESSAGE_SENT", "followUp1Message", lead.acceptMessageSentAt, delays.followUp1DelayDays * DAY_MS, "send_follow_up_1"],
+    ["FOLLOW_UP_1_SENT", "followUp2Message", lead.followUp1SentAt, delays.followUp2DelayDays * DAY_MS, "send_follow_up_2"],
+    ["FOLLOW_UP_2_SENT", "followUp3Message", lead.followUp2SentAt, delays.followUp3DelayDays * DAY_MS, "send_follow_up_3"],
+    ["FOLLOW_UP_3_SENT", "followUp4Message", lead.followUp3SentAt ?? null, delays.followUp4DelayDays * DAY_MS, "send_follow_up_4"],
   ] as const;
   for (const [status, key, sentAt, delay, name] of stages) {
     if (lead.status !== status) continue;
@@ -120,10 +126,12 @@ export function peopleNextAction(lead: LinkedinParityLead, now: Date): NextActio
       ? action("advance_acceptance", null, undefined, "already_claimed")
       : action("send_acceptance", template, lead.variables);
   }
+  const delays = withDefaultDelays(lead.campaignDelays);
   const stages = [
-    ["ACCEPT_MESSAGE_SENT", "followUp1Message", lead.acceptMessageSentAt, 24 * 60 * 60 * 1000, "FOLLOW_UP_1", "send_follow_up_1"],
-    ["FOLLOW_UP_1_SENT", "followUp2Message", lead.followUp1SentAt, 48 * 60 * 60 * 1000, "FOLLOW_UP_2", "send_follow_up_2"],
-    ["FOLLOW_UP_2_SENT", "followUp3Message", lead.followUp2SentAt, 72 * 60 * 60 * 1000, "FOLLOW_UP_3", "send_follow_up_3"],
+    ["ACCEPT_MESSAGE_SENT", "followUp1Message", lead.acceptMessageSentAt, delays.followUp1DelayDays * DAY_MS, "FOLLOW_UP_1", "send_follow_up_1"],
+    ["FOLLOW_UP_1_SENT", "followUp2Message", lead.followUp1SentAt, delays.followUp2DelayDays * DAY_MS, "FOLLOW_UP_2", "send_follow_up_2"],
+    ["FOLLOW_UP_2_SENT", "followUp3Message", lead.followUp2SentAt, delays.followUp3DelayDays * DAY_MS, "FOLLOW_UP_3", "send_follow_up_3"],
+    ["FOLLOW_UP_3_SENT", "followUp4Message", lead.followUp3SentAt ?? null, delays.followUp4DelayDays * DAY_MS, "FOLLOW_UP_4", "send_follow_up_4"],
   ] as const;
   for (const [status, key, sentAt, delay, messageType, name] of stages) {
     if (lead.status !== status) continue;

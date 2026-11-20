@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { campaigns, connections, leads, linkedInAccounts, webhookEvents } from "@/lib/linkedin/schema";
-import type { LeadStatus } from "@/lib/linkedin/schema";
+import { isLateInvitationEcho, isLinkedinReplyStatus } from "@/lib/linkedin/replyStatus";
 import { saveInboundMessage } from "@/lib/linkedin/messages/inboundMessage";
 import { processLeadAcceptance } from "@/lib/linkedin/acceptanceMessage";
 import { isMigrationControlPaused } from "@/lib/migration/controls";
@@ -18,14 +18,6 @@ import {
 } from "@/lib/linkedin/webhooks/inbox";
 import { currentOrganizationId, inOrg, maybeCurrentOrganizationId, runInOrganization } from "@/lib/tenancy/scope";
 import { checkUnipileWebhookSecret, gateUnipileWebhook, organizationIdForLinkedinAccount } from "@/lib/linkedin/organizations.server";
-
-const REPLY_STATUSES: LeadStatus[] = [
-  "ACCEPT_MESSAGE_SENT",
-  "FOLLOW_UP_1_SENT",
-  "FOLLOW_UP_2_SENT",
-  "FOLLOW_UP_3_SENT",
-  "COMPLETED",
-];
 
 type LogLevel = "info" | "warn" | "error";
 type LogEntry = { level: LogLevel; message: string; time: string };
@@ -197,7 +189,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
     // `include: { campaign: { select: { type: true } } }` becomes a leftJoin
     // (campaignId is nullable) reshaped back into `lead.campaign`.
     const leadRows = await db
-      .select({ lead: leads, person: people, company: companies, campaignType: campaigns.type, campaignStatus: campaigns.status, campaignInvitationMessage: campaigns.invitationMessage, campaignAcceptanceMessage: campaigns.acceptanceMessage })
+      .select({ lead: leads, person: people, company: companies, campaignType: campaigns.type, campaignStatus: campaigns.status, campaignInvitationMessage: campaigns.invitationMessage, campaignAcceptanceMessage: campaigns.acceptanceMessage, campaignAcceptanceDelayDays: campaigns.acceptanceDelayDays })
       .from(leads)
       .innerJoin(people, eq(leads.personId, people.id))
       .leftJoin(companies, eq(people.companyId, companies.id))
@@ -217,7 +209,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
     }
     const [leadRow] = leadRows;
     const lead = leadRow
-      ? { ...leadRow.lead, invitationMessage: leadRow.campaignInvitationMessage ?? leadRow.lead.invitationMessage, acceptanceMessage: leadRow.campaignAcceptanceMessage ?? leadRow.lead.acceptanceMessage, ...personProfile(leadRow.person, leadRow.company), campaign: leadRow.campaignType ? { type: leadRow.campaignType, status: leadRow.campaignStatus } : null }
+      ? { ...leadRow.lead, invitationMessage: leadRow.campaignInvitationMessage ?? leadRow.lead.invitationMessage, acceptanceMessage: leadRow.campaignAcceptanceMessage ?? leadRow.lead.acceptanceMessage, acceptanceDelayDays: leadRow.campaignAcceptanceDelayDays, ...personProfile(leadRow.person, leadRow.company), campaign: leadRow.campaignType ? { type: leadRow.campaignType, status: leadRow.campaignStatus } : null }
       : undefined;
     if (lead) {
       log.info(`Lead found: ${lead.linkedinUrl} (status: ${lead.status})`);
@@ -322,6 +314,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
         );
         if (acceptanceResult === "retry") log.warn("Acceptance delivery deferred until a chat is available");
         if (acceptanceResult === "blocked") log.warn("Acceptance blocked by Person-global DNC");
+        if (acceptanceResult === "deferred") log.info("Acceptance delay not over — lead parked as CONNECTED; the sweep sends it when due");
       } else {
         log.info(`Message is a genuine reply while in REQUEST_SENT — saving as RECEIVED and advancing to REPLIED`);
         if (isPersonalCampaignLead) {
@@ -355,16 +348,17 @@ async function handle(req: NextRequest, body: WebhookBody) {
 
     // ── Lead is in a post-acceptance status or ongoing REPLIED conversation ──
     const handlesInboundReply =
-      REPLY_STATUSES.includes(lead.status) || lead.status === "REPLIED";
+      isLinkedinReplyStatus(lead.status);
 
     if (handlesInboundReply) {
-      const isLateEcho =
-        lead.status === "ACCEPT_MESSAGE_SENT" &&
-        lead.invitationMessage &&
-        messageText.trim() === fillTemplate(lead.invitationMessage, lead.variables).trim();
+      const isLateEcho = isLateInvitationEcho(
+        lead.status,
+        lead.invitationMessage ? fillTemplate(lead.invitationMessage, lead.variables) : null,
+        messageText,
+      );
 
       if (isLateEcho) {
-        log.info(`Late echo detected (invitation text arrived after ACCEPT_MESSAGE_SENT) — ignoring`);
+        log.info(`Late echo detected (invitation text arrived after acceptance) — ignoring`);
         await finish("skipped");
         return response;
       }

@@ -59,17 +59,34 @@ From the campaign list, the **...** menu has **Edit campaign**, **Pause campaign
 
 ## The sequence
 
-A sequence has up to five messages. All are optional.
+A sequence has up to six messages. All are optional.
 
 | Step | When it sends | Notes |
 | --- | --- | --- |
 | **Connection request** | As soon as the lead is picked | Leave it blank to send the request without a note. Up to 300 characters. |
-| **Acceptance message** | When the lead accepts | Sent as soon as the acceptance is detected. |
+| **Acceptance message** | When the lead accepts | Sent as soon as the acceptance is detected, unless you set an acceptance delay (below). |
 | **Follow-up 1** | 1 day after the acceptance message | |
 | **Follow-up 2** | 2 days after follow-up 1 | |
-| **Follow-up 3** | 3 days after follow-up 2 | The sequence then completes. |
+| **Follow-up 3** | 3 days after follow-up 2 | |
+| **Follow-up 4** | 4 days after follow-up 3 | The sequence then completes. |
 
-These delays are fixed. A follow-up with no message ends the sequence for that lead and marks it **Completed**.
+The times in the table are the defaults. A follow-up with no message ends the sequence for that lead and marks it **Completed**, and you cannot write a follow-up while an earlier one is blank.
+
+### Set the timing
+
+On the **Sequence** tab, every step after the connection request has **Send after [n] days**. Each delay counts from the step before it:
+
+| Setting | Allowed | Default |
+| --- | --- | --- |
+| **Acceptance message**: days after the connection is accepted | 0 to 30 | 0 (send as soon as it is accepted) |
+| **Follow-up 1**: days after the acceptance message | 1 to 60 | 1 |
+| **Follow-up 2**: days after follow-up 1 | 1 to 60 | 2 |
+| **Follow-up 3**: days after follow-up 2 | 1 to 60 | 3 |
+| **Follow-up 4**: days after follow-up 3 | 1 to 60 | 4 |
+
+For example, an acceptance delay of 1 with follow-up delays of 3, 4, 4 and 7 sends the five messages 1, 4, 8, 12 and 19 days after the lead accepts. Delays are whole days and are checked in the sequence editor and by the API.
+
+With an acceptance delay, a lead that accepts shows as **Connected** until the acceptance message is due. If the lead replies in that time, the reply is recorded, the lead becomes **Replied** and nothing more is sent. A campaign with no delays set keeps the behaviour described in the first table. The setting applies to leads already in the campaign, from their next step on.
 
 <Warning>
 The connection request note is limited to 300 characters. A lead whose request, after merge fields are filled in, is longer than 300 is marked **Failed** and is not sent. The preview warns when a rendered invitation is too long, so preview a lead with a long name or company.
@@ -120,9 +137,10 @@ The **Leads** tab filters by status:
 | --- | --- |
 | **Pending** | Waiting for a profile lookup or a connection request. |
 | **Request Sent** | The connection request went out. |
+| **Connected** | The lead accepted and the acceptance message is waiting out the campaign's acceptance delay. |
 | **Accepted** | The lead accepted and the acceptance message was handled. |
-| **Follow-up 1**, **2**, **3** | That follow-up has been sent. |
-| **Completed** | The sequence ended with no reply. |
+| **Follow-up 1**, **2**, **3** | That follow-up has been sent, and a later one is still to come. |
+| **Completed** | The sequence ended: the last written message was sent (follow-up 4 is the last possible one), or the next message is blank. |
 | **Replied** | The lead wrote back. All automated messages stop. |
 | **Failed** | Could not be processed. |
 

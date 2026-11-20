@@ -84,7 +84,7 @@ type ThreadMessage = {
 type FilterAccount = { id: string; username: string; name: string | null; profilePictureUrl: string | null };
 type FilterCampaign = { id: string; name: string };
 
-const SENT_TYPES = new Set(["INVITATION", "ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "CUSTOM_SENT"]);
+const SENT_TYPES = new Set(["INVITATION", "ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "FOLLOW_UP_4", "CUSTOM_SENT"]);
 
 const TYPE_LABEL: Record<string, string> = {
   INVITATION: "Invitation",
@@ -92,6 +92,7 @@ const TYPE_LABEL: Record<string, string> = {
   FOLLOW_UP_1: "Follow-up 1",
   FOLLOW_UP_2: "Follow-up 2",
   FOLLOW_UP_3: "Follow-up 3",
+  FOLLOW_UP_4: "Follow-up 4",
   CUSTOM_SENT: "Sent",
   RECEIVED: "Received",
 };
@@ -103,6 +104,7 @@ const STATUS_LABEL: Record<string, string> = {
   FOLLOW_UP_1_SENT: "Follow-up 1",
   FOLLOW_UP_2_SENT: "Follow-up 2",
   FOLLOW_UP_3_SENT: "Follow-up 3",
+  CONNECTED: "Connected",
   COMPLETED: "Completed",
   REPLIED: "Replied",
   FAILED: "Failed",
@@ -133,7 +135,7 @@ const splitCategoryFilter = (value: string, categories: CrmCategoryOption[]) => 
   return { categoryKey: sub?.categoryKey ?? "", subcategoryId: value };
 };
 
-const ALL_STATUSES = ["PENDING", "REQUEST_SENT", "ACCEPT_MESSAGE_SENT", "FOLLOW_UP_1_SENT", "FOLLOW_UP_2_SENT", "FOLLOW_UP_3_SENT", "COMPLETED", "REPLIED", "FAILED"];
+const ALL_STATUSES = ["PENDING", "REQUEST_SENT", "CONNECTED", "ACCEPT_MESSAGE_SENT", "FOLLOW_UP_1_SENT", "FOLLOW_UP_2_SENT", "FOLLOW_UP_3_SENT", "COMPLETED", "REPLIED", "FAILED"];
 
 const TIME_PERIODS = [
   { label: "All time", days: null },

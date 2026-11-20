@@ -43,7 +43,7 @@ import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
  * record timeline merges both at read time rather than backfilling, so the
  * LinkedIn tables stay the hand-maintained ones CLAUDE.md describes.
  */
-const LINKEDIN_OUTBOUND_TYPES = new Set(["INVITATION", "ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "CUSTOM_SENT"]);
+const LINKEDIN_OUTBOUND_TYPES = new Set(["INVITATION", "ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "FOLLOW_UP_4", "CUSTOM_SENT"]);
 
 const LINKEDIN_TYPE_LABELS: Record<string, string> = {
   INVITATION: "Invitation",
@@ -51,6 +51,7 @@ const LINKEDIN_TYPE_LABELS: Record<string, string> = {
   FOLLOW_UP_1: "Follow-up 1",
   FOLLOW_UP_2: "Follow-up 2",
   FOLLOW_UP_3: "Follow-up 3",
+  FOLLOW_UP_4: "Follow-up 4",
   CUSTOM_SENT: "Sent",
   RECEIVED: "Received",
 };

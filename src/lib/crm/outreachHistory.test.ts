@@ -106,7 +106,7 @@ describe("linkedinOutreachRowToMessageInput", () => {
   });
 
   it("accepts every non-RECEIVED type, including CUSTOM_SENT", () => {
-    for (const type of ["ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "CUSTOM_SENT"] as const) {
+    for (const type of ["ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "FOLLOW_UP_4", "CUSTOM_SENT"] as const) {
       assert.ok(linkedinOutreachRowToMessageInput(linkedinRow({ type })));
     }
   });

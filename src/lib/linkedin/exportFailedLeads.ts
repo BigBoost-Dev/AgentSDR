@@ -51,6 +51,7 @@ export const mappedLeadRowToRaw = (row: {
   followUp1Message?: string | null;
   followUp2Message?: string | null;
   followUp3Message?: string | null;
+  followUp4Message?: string | null;
 }): Record<string, string> => ({
   "LinkedIn URL": row.linkedinUrl,
   "LinkedIn API": row.linkedinApi ?? "",
@@ -67,4 +68,5 @@ export const mappedLeadRowToRaw = (row: {
   "Follow-up 1": row.followUp1Message ?? "",
   "Follow-up 2": row.followUp2Message ?? "",
   "Follow-up 3": row.followUp3Message ?? "",
+  "Follow-up 4": row.followUp4Message ?? "",
 });

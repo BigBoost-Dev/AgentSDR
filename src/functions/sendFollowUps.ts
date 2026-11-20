@@ -1,5 +1,5 @@
 import { isPlatformConnected } from "@/lib/platform/credentials";
-import { and, asc, eq, inArray, isNotNull, lt, lte, ne, or, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt, ne, or, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies, people } from "@/lib/leads/schema";
 import { personVariables } from "@/lib/leads/variables";
@@ -16,10 +16,6 @@ import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 import { channelRules } from "@/lib/channels/rules.server";
 import { pickInRange } from "@/lib/channels/rules";
 
-const FOLLOW_UP_1_AFTER_MS = 24 * 60 * 60 * 1000;
-const FOLLOW_UP_2_AFTER_MS = 48 * 60 * 60 * 1000;
-const FOLLOW_UP_3_AFTER_MS = 72 * 60 * 60 * 1000;
-
 /** Messages per run, from Settings → LinkedIn → Sending rules. */
 const followUpsPerRun = async (): Promise<number> => pickInRange((await channelRules("linkedin")).followUpsPerRun);
 
@@ -34,13 +30,14 @@ type FollowUpStage = {
   label: string;
   fromStatus: LeadStatus;
   toStatus: LeadStatus;
-  afterMs: number;
+  /** Campaign column holding how many days to wait after `cutoffField` (the old fixed 24/48/72h, now per campaign). */
+  delayField: "followUp1DelayDays" | "followUp2DelayDays" | "followUp3DelayDays" | "followUp4DelayDays";
   messageType: MessageType;
-  messageField: "followUp1Message" | "followUp2Message" | "followUp3Message";
-  sentAtField: "followUp1SentAt" | "followUp2SentAt" | "followUp3SentAt";
-  cutoffField: "acceptMessageSentAt" | "followUp1SentAt" | "followUp2SentAt";
+  messageField: "followUp1Message" | "followUp2Message" | "followUp3Message" | "followUp4Message";
+  sentAtField: "followUp1SentAt" | "followUp2SentAt" | "followUp3SentAt" | "followUp4SentAt";
+  cutoffField: "acceptMessageSentAt" | "followUp1SentAt" | "followUp2SentAt" | "followUp3SentAt";
   /** Message that must exist for the NEXT stage to run; null when this is the last stage. */
-  nextMessageField: "followUp2Message" | "followUp3Message" | null;
+  nextMessageField: "followUp2Message" | "followUp3Message" | "followUp4Message" | null;
 };
 
 /**
@@ -52,18 +49,28 @@ const MESSAGE_COLS = {
   followUp1Message: leadsTable.followUp1Message,
   followUp2Message: leadsTable.followUp2Message,
   followUp3Message: leadsTable.followUp3Message,
+  followUp4Message: leadsTable.followUp4Message,
 } as const;
 
 const CAMPAIGN_MESSAGE_COLS = {
   followUp1Message: campaigns.followUp1Message,
   followUp2Message: campaigns.followUp2Message,
   followUp3Message: campaigns.followUp3Message,
+  followUp4Message: campaigns.followUp4Message,
+} as const;
+
+const DELAY_COLS = {
+  followUp1DelayDays: campaigns.followUp1DelayDays,
+  followUp2DelayDays: campaigns.followUp2DelayDays,
+  followUp3DelayDays: campaigns.followUp3DelayDays,
+  followUp4DelayDays: campaigns.followUp4DelayDays,
 } as const;
 
 const CUTOFF_COLS = {
   acceptMessageSentAt: leadsTable.acceptMessageSentAt,
   followUp1SentAt: leadsTable.followUp1SentAt,
   followUp2SentAt: leadsTable.followUp2SentAt,
+  followUp3SentAt: leadsTable.followUp3SentAt,
 } as const;
 
 const FOLLOW_UP_STAGES: FollowUpStage[] = [
@@ -71,7 +78,7 @@ const FOLLOW_UP_STAGES: FollowUpStage[] = [
     label: "Follow-up 1",
     fromStatus: "ACCEPT_MESSAGE_SENT",
     toStatus: "FOLLOW_UP_1_SENT",
-    afterMs: FOLLOW_UP_1_AFTER_MS,
+    delayField: "followUp1DelayDays",
     messageType: "FOLLOW_UP_1",
     messageField: "followUp1Message",
     sentAtField: "followUp1SentAt",
@@ -82,7 +89,7 @@ const FOLLOW_UP_STAGES: FollowUpStage[] = [
     label: "Follow-up 2",
     fromStatus: "FOLLOW_UP_1_SENT",
     toStatus: "FOLLOW_UP_2_SENT",
-    afterMs: FOLLOW_UP_2_AFTER_MS,
+    delayField: "followUp2DelayDays",
     messageType: "FOLLOW_UP_2",
     messageField: "followUp2Message",
     sentAtField: "followUp2SentAt",
@@ -93,11 +100,22 @@ const FOLLOW_UP_STAGES: FollowUpStage[] = [
     label: "Follow-up 3",
     fromStatus: "FOLLOW_UP_2_SENT",
     toStatus: "FOLLOW_UP_3_SENT",
-    afterMs: FOLLOW_UP_3_AFTER_MS,
+    delayField: "followUp3DelayDays",
     messageType: "FOLLOW_UP_3",
     messageField: "followUp3Message",
     sentAtField: "followUp3SentAt",
     cutoffField: "followUp2SentAt",
+    nextMessageField: "followUp4Message",
+  },
+  {
+    label: "Follow-up 4",
+    fromStatus: "FOLLOW_UP_3_SENT",
+    toStatus: "COMPLETED",
+    delayField: "followUp4DelayDays",
+    messageType: "FOLLOW_UP_4",
+    messageField: "followUp4Message",
+    sentAtField: "followUp4SentAt",
+    cutoffField: "followUp3SentAt",
     nextMessageField: null,
   },
 ];
@@ -142,8 +160,6 @@ const runFollowUpStage = async (account: LinkedInAccount, stage: FollowUpStage):
   // Retire exhausted leads first so they can never occupy a slot in the batch below.
   await completeExhaustedLeads(account, stage);
 
-  const cutoff = new Date(Date.now() - stage.afterMs);
-
   // Only select leads that can actually be sent: message present and a chat to send it in.
   // Messages are trimmed on write, so a stored empty string means "no message".
   // Oldest first, so a lead can never be starved by newer arrivals.
@@ -154,6 +170,10 @@ const runFollowUpStage = async (account: LinkedInAccount, stage: FollowUpStage):
     ? sql<string | null>`coalesce(${CAMPAIGN_MESSAGE_COLS[stage.nextMessageField]}, ${MESSAGE_COLS[stage.nextMessageField]})`
     : sql<null>`null`;
   const cutoffCol = CUTOFF_COLS[stage.cutoffField];
+  // Each campaign sets its own wait; the column defaults (1 / 2 / 3 / 4 days) are the old fixed 24 / 48 / 72h.
+  // The timestamp columns are `timestamp without time zone` holding UTC wall time (the app writes
+  // Dates as UTC), so compare against the app clock, not now(): now() would shift with the session TimeZone.
+  const dueExpr = sql`${cutoffCol} <= ${new Date().toISOString()}::timestamp - ${DELAY_COLS[stage.delayField]} * interval '1 day'`;
 
   // `connection: { chatId: { not: null } }` was a relation filter, so this is
   // an innerJoin: only leads that HAVE a connection with a chatId qualify.
@@ -178,7 +198,7 @@ const runFollowUpStage = async (account: LinkedInAccount, stage: FollowUpStage):
           eq(leadsTable.linkedinAccountId, account.id),
           eq(leadsTable.status, stage.fromStatus),
           eq(campaigns.status, "ACTIVE"),
-          lte(cutoffCol, cutoff),
+          dueExpr,
           isNotNull(messageExpr),
           ne(messageExpr, ""),
           isNotNull(connections.chatId),
@@ -301,6 +321,7 @@ export const sendFollowUps = async (account: LinkedInAccount): Promise<void> => 
 // with a Connection record. Retry sending the acceptance message now that Unipile may
 // have synced the chat.
 const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> => {
+  const nowIso = new Date().toISOString();
   // `connection: { isNot: null }` — an innerJoin expresses exactly that.
   const leads = (
     await db
@@ -309,6 +330,7 @@ const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> =>
         person: people,
         company: companies,
         campaignAcceptanceMessage: campaigns.acceptanceMessage,
+        campaignAcceptanceDelayDays: campaigns.acceptanceDelayDays,
         connection: {
           id: connections.id,
           chatId: connections.chatId,
@@ -324,14 +346,30 @@ const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> =>
         and(
           inOrg(leadsTable),
           eq(leadsTable.linkedinAccountId, account.id),
-          eq(leadsTable.status, "REQUEST_SENT"),
+          // A CONNECTED lead is one whose acceptance message was parked by the campaign's
+          // acceptance delay (counted from leads.acceptedAt); it is picked up once the delay
+          // has passed, including when the delay was later set to 0. Nothing else writes
+          // CONNECTED, so a campaign without a delay is unaffected.
+          or(
+            eq(leadsTable.status, "REQUEST_SENT"),
+            and(
+              eq(leadsTable.status, "CONNECTED"),
+              or(
+                isNull(leadsTable.acceptedAt),
+                sql`${leadsTable.acceptedAt} <= ${nowIso}::timestamp - ${campaigns.acceptanceDelayDays} * interval '1 day'`
+              )
+            )
+          ),
           eq(campaigns.status, "ACTIVE")
         )
       )
+      // Due CONNECTED leads first: REQUEST_SENT rows that keep answering "retry" (no chat yet)
+      // must not use up every slot and starve them. Then oldest first.
+      .orderBy(sql`case when ${leadsTable.status} = 'CONNECTED' then 0 else 1 end`, asc(leadsTable.updatedAt))
       .limit(await followUpsPerRun())
-  ).map((r) => ({ ...r.lead, acceptanceMessage: r.campaignAcceptanceMessage ?? r.lead.acceptanceMessage, connection: r.connection, linkedinUrl: r.person.linkedinUrl!, variables: personVariables(r.person, r.company) }));
+  ).map((r) => ({ ...r.lead, acceptanceMessage: r.campaignAcceptanceMessage ?? r.lead.acceptanceMessage, acceptanceDelayDays: r.campaignAcceptanceDelayDays, connection: r.connection, linkedinUrl: r.person.linkedinUrl!, variables: personVariables(r.person, r.company) }));
 
-  console.log(`[missedAcceptances] Found ${leads.length} REQUEST_SENT lead(s) with a connection record`);
+  console.log(`[missedAcceptances] Found ${leads.length} REQUEST_SENT or due CONNECTED lead(s) with a connection record`);
   if (leads.length === 0) return;
 
   for (const lead of leads) {
@@ -348,6 +386,8 @@ const sendMissedAcceptances = async (account: LinkedInAccount): Promise<void> =>
 
       if (result === "blocked") {
         console.warn(`[missedAcceptances] ${lead.linkedinUrl} — blocked by Person-global DNC`);
+      } else if (result === "deferred") {
+        console.log(`[missedAcceptances] ${lead.linkedinUrl} — acceptance delay not over yet, parked as CONNECTED`);
       } else if (result === "retry") {
         console.warn(`[missedAcceptances] ${lead.linkedinUrl} — still no chatId, will retry next cycle`);
       } else {

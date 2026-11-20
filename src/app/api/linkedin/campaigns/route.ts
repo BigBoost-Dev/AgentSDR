@@ -11,6 +11,7 @@ import {
   type CampaignStatus,
 } from "@/lib/linkedin/schema";
 import { linkedinSequenceError, normalizeLinkedinSequence } from "@/lib/linkedin/campaignSequence";
+import { parseSequenceDelays } from "@/lib/linkedin/sequenceTiming";
 import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
 
 const ACCOUNT_SELECT = {
@@ -95,7 +96,8 @@ export async function GET(req: Request) {
 export async function POST(req: NextRequest) {
   return withLinkedinOrg(req, async () => {
     try {
-      const { name, description, linkedinAccountIds, type, status, invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message } = await req.json();
+      const body = await req.json();
+      const { name, description, linkedinAccountIds, type, status, invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message, followUp4Message } = body;
       if (!name?.trim()) {
         return NextResponse.json({ ok: false, error: "Name is required" }, { status: 400 });
       }
@@ -110,10 +112,15 @@ export async function POST(req: NextRequest) {
         );
       }
       const campaignStatus: CampaignStatus = "PAUSED";
-      const sequence = normalizeLinkedinSequence({ invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message });
+      const sequence = normalizeLinkedinSequence({ invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message, followUp4Message });
       const sequenceError = linkedinSequenceError(sequence);
       if (sequenceError) {
         return NextResponse.json({ ok: false, error: sequenceError }, { status: 400 });
+      }
+
+      const delays = parseSequenceDelays(body);
+      if (!delays.ok) {
+        return NextResponse.json({ ok: false, error: delays.error }, { status: 400 });
       }
 
       if (ids.length) {
@@ -140,6 +147,8 @@ export async function POST(req: NextRequest) {
             followUp1Message: sequence.followUp1Message || null,
             followUp2Message: sequence.followUp2Message || null,
             followUp3Message: sequence.followUp3Message || null,
+            followUp4Message: sequence.followUp4Message || null,
+            ...delays.delays,
             updatedAt: new Date(),
           })
           .returning();

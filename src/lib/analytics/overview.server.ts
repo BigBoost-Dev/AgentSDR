@@ -24,7 +24,7 @@ import { createLimiter, inCurrentOrPreviousRange, inRange, num } from "./server"
  */
 
 /** LinkedIn message types that are outbound touches (everything except RECEIVED). */
-const LINKEDIN_OUTBOUND = sql`('INVITATION', 'ACCEPTANCE', 'FOLLOW_UP_1', 'FOLLOW_UP_2', 'FOLLOW_UP_3', 'CUSTOM_SENT')`;
+const LINKEDIN_OUTBOUND = sql`('INVITATION', 'ACCEPTANCE', 'FOLLOW_UP_1', 'FOLLOW_UP_2', 'FOLLOW_UP_3', 'FOLLOW_UP_4', 'CUSTOM_SENT')`;
 
 /**
  * Every outbound touch in the current and previous period: (channel, person, ts).

@@ -16,7 +16,8 @@ import { LinkedInSequenceEditor } from "@/components/linkedin/LinkedInSequenceEd
 import { Frame, FrameHeader, FramePanel } from "@/components/analytics/kit/Frame";
 import { DocsLink } from "@/components/page/DocsLink";
 import { PageHeader } from "@/components/page/PageHeader";
-import { EMPTY_LINKEDIN_SEQUENCE, type LinkedinCampaignSequence } from "@/lib/linkedin/campaignSequence";
+import { EMPTY_LINKEDIN_SEQUENCE, linkedinSequenceSteps, type LinkedinSequenceSettings } from "@/lib/linkedin/campaignSequence";
+import { DEFAULT_SEQUENCE_DELAYS } from "@/lib/linkedin/sequenceTiming";
 import { cn } from "@/utils/cn";
 
 type Account = { id: string; username: string; name: string | null; profilePictureUrl: string | null };
@@ -55,7 +56,7 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
   const [type, setType] = useState<"REGULAR" | "PERSONAL">("REGULAR");
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [leadCount, setLeadCount] = useState(0);
-  const [sequence, setSequence] = useState<LinkedinCampaignSequence>(EMPTY_LINKEDIN_SEQUENCE);
+  const [sequence, setSequence] = useState<LinkedinSequenceSettings>({ ...EMPTY_LINKEDIN_SEQUENCE, ...DEFAULT_SEQUENCE_DELAYS });
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showPeople, setShowPeople] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -327,7 +328,7 @@ export function LinkedInCampaignWizard({ accounts }: { accounts: Account[] }) {
                   <ul className="divide-y divide-stroke-soft-200 rounded-xl bg-bg-white-0 px-4 ring-1 ring-inset ring-stroke-soft-200">
                     {STEPS_FOR_SUMMARY(sequence).map((item) => (
                       <li key={item.label} className="flex items-center justify-between gap-4 py-2.5 text-paragraph-sm">
-                        <span className="text-text-sub-600">{item.label}</span>
+                        <span className="text-text-sub-600">{item.label}<span className="ml-2 text-paragraph-xs text-text-soft-400">{item.timing}</span></span>
                         <span className={cn("inline-flex items-center gap-1", item.enabled ? "text-success-base" : "text-text-soft-400")}>
                           {item.enabled && <RiCheckLine className="size-4" aria-hidden="true" />}
                           {item.enabled ? "Ready" : "Skipped"}
@@ -357,7 +358,7 @@ function StepHeading({ title, description }: { title: string; description: strin
 }
 
 function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) { return <div className="rounded-xl bg-bg-white-0 p-4 shadow-regular-xs ring-1 ring-inset ring-stroke-soft-200"><p className="text-paragraph-xs text-text-sub-600">{label}</p><p className="mt-1 truncate text-label-lg text-text-strong-950" title={value}>{value}</p><p className="text-paragraph-xs text-text-sub-600">{detail}</p></div>; }
-function STEPS_FOR_SUMMARY(sequence: LinkedinCampaignSequence) { return [{ label: "Connection request", enabled: Boolean(sequence.invitationMessage) }, { label: "Acceptance message", enabled: Boolean(sequence.acceptanceMessage) }, { label: "Follow-up 1", enabled: Boolean(sequence.followUp1Message) }, { label: "Follow-up 2", enabled: Boolean(sequence.followUp2Message) }, { label: "Follow-up 3", enabled: Boolean(sequence.followUp3Message) }]; }
+function STEPS_FOR_SUMMARY(sequence: LinkedinSequenceSettings) { return linkedinSequenceSteps(sequence).map((step) => ({ label: step.label, timing: step.timing, enabled: Boolean(sequence[step.field]) })); }
 
 function WizardFooter({ error, onBack, onNext, busy, backLabel = "Back", nextLabel, nextDisabled, secondaryLabel, onSecondary, nextIcon: NextIcon = ArrowRight }: { error?: string | null; onBack: () => void; onNext: () => void; busy?: boolean; backLabel?: string; nextLabel: string; nextDisabled?: boolean; secondaryLabel?: string; onSecondary?: () => void; nextIcon?: typeof ArrowRight }) {
   return <div className="mt-8 border-t border-stroke-soft-200 pt-5">{error && <p role="alert" className="mb-3 text-paragraph-sm text-error-base">{error}</p>}<div className="flex flex-wrap items-center justify-between gap-3"><AlignButton.Root variant="neutral" mode="ghost" size="small" onClick={onBack} disabled={busy}><AlignButton.Icon as={ArrowLeft} />{backLabel}</AlignButton.Root><div className="flex gap-2">{secondaryLabel && onSecondary && <AlignButton.Root variant="neutral" mode="stroke" size="small" onClick={onSecondary} disabled={busy}>{secondaryLabel}</AlignButton.Root>}<AlignButton.Root variant="primary" mode="filled" size="small" onClick={onNext} disabled={busy || nextDisabled}>{busy ? <AlignButton.Icon as={Loader2} className="animate-spin" /> : <AlignButton.Icon as={NextIcon} />}{busy ? "Saving…" : nextLabel}</AlignButton.Root></div></div></div>;

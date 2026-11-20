@@ -35,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           followUp1Message: campaigns.followUp1Message,
           followUp2Message: campaigns.followUp2Message,
           followUp3Message: campaigns.followUp3Message,
+          followUp4Message: campaigns.followUp4Message,
         },
         linkedInAccount: {
           id: linkedInAccounts.id,
@@ -79,6 +80,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       followUp1Message: campaign?.followUp1Message ?? lead.followUp1Message,
       followUp2Message: campaign?.followUp2Message ?? lead.followUp2Message,
       followUp3Message: campaign?.followUp3Message ?? lead.followUp3Message,
+      followUp4Message: campaign?.followUp4Message ?? lead.followUp4Message,
     };
     const renderedTemplates = renderLeadTemplates(
       templates,
@@ -156,6 +158,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp1SentAt: lead.followUp1SentAt?.toISOString() ?? null,
         followUp2SentAt: lead.followUp2SentAt?.toISOString() ?? null,
         followUp3SentAt: lead.followUp3SentAt?.toISOString() ?? null,
+        followUp4SentAt: lead.followUp4SentAt?.toISOString() ?? null,
         createdAt: lead.createdAt.toISOString(),
         updatedAt: lead.updatedAt.toISOString(),
         campaign,
@@ -184,6 +187,7 @@ const MESSAGE_FIELDS = [
   "followUp1Message",
   "followUp2Message",
   "followUp3Message",
+  "followUp4Message",
 ] as const;
 
 type MessageField = (typeof MESSAGE_FIELDS)[number];
@@ -235,6 +239,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         followUp1Message: campaigns.followUp1Message,
         followUp2Message: campaigns.followUp2Message,
         followUp3Message: campaigns.followUp3Message,
+        followUp4Message: campaigns.followUp4Message,
       }).from(campaigns).where(and(inOrg(campaigns), eq(campaigns.id, nativeLead.campaignId))).limit(1);
       const lead = { ...nativeLead, ...campaignMessages };
       if (!lead) {

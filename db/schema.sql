@@ -81,7 +81,8 @@ CREATE TYPE public."MessageType" AS ENUM (
     'FOLLOW_UP_2',
     'RECEIVED',
     'CUSTOM_SENT',
-    'FOLLOW_UP_3'
+    'FOLLOW_UP_3',
+    'FOLLOW_UP_4'
 );
 
 --
@@ -682,7 +683,14 @@ CREATE TABLE public."Campaign" (
     "followUp1Message" text,
     "followUp2Message" text,
     "followUp3Message" text,
-    "organizationId" uuid NOT NULL
+    "organizationId" uuid NOT NULL,
+    "followUp4Message" text,
+    "acceptanceDelayDays" integer DEFAULT 0 NOT NULL,
+    "followUp1DelayDays" integer DEFAULT 1 NOT NULL,
+    "followUp2DelayDays" integer DEFAULT 2 NOT NULL,
+    "followUp3DelayDays" integer DEFAULT 3 NOT NULL,
+    "followUp4DelayDays" integer DEFAULT 4 NOT NULL,
+    CONSTRAINT "Campaign_sequence_delays_chk" CHECK (((("acceptanceDelayDays" >= 0) AND ("acceptanceDelayDays" <= 30)) AND (("followUp1DelayDays" >= 1) AND ("followUp1DelayDays" <= 60)) AND (("followUp2DelayDays" >= 1) AND ("followUp2DelayDays" <= 60)) AND (("followUp3DelayDays" >= 1) AND ("followUp3DelayDays" <= 60)) AND (("followUp4DelayDays" >= 1) AND ("followUp4DelayDays" <= 60))))
 );
 
 --
@@ -775,7 +783,10 @@ CREATE TABLE public."Lead" (
     "resolveNextAttemptAt" timestamp(3) without time zone,
     "resolveLastError" text,
     "supersededByLeadId" text,
-    "organizationId" uuid NOT NULL
+    "organizationId" uuid NOT NULL,
+    "followUp4Message" text,
+    "followUp4SentAt" timestamp(3) without time zone,
+    "acceptedAt" timestamp(3) without time zone
 );
 
 --
@@ -4103,7 +4114,7 @@ CREATE INDEX "LinkedInAccount_organization_idx" ON public."LinkedInAccount" USIN
 -- Name: Message_automated_lead_type_uq; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX "Message_automated_lead_type_uq" ON public."Message" USING btree ("leadId", type) WHERE (("leadId" IS NOT NULL) AND ("duplicateOfMessageId" IS NULL) AND (type = ANY (ARRAY['INVITATION'::public."MessageType", 'ACCEPTANCE'::public."MessageType", 'FOLLOW_UP_1'::public."MessageType", 'FOLLOW_UP_2'::public."MessageType", 'FOLLOW_UP_3'::public."MessageType"])));
+CREATE UNIQUE INDEX "Message_automated_lead_type_uq" ON public."Message" USING btree ("leadId", type) WHERE (("leadId" IS NOT NULL) AND ("duplicateOfMessageId" IS NULL) AND (type = ANY (ARRAY['INVITATION'::public."MessageType", 'ACCEPTANCE'::public."MessageType", 'FOLLOW_UP_1'::public."MessageType", 'FOLLOW_UP_2'::public."MessageType", 'FOLLOW_UP_3'::public."MessageType", 'FOLLOW_UP_4'::public."MessageType"])));
 
 --
 -- Name: Message_duplicateOfMessageId_idx; Type: INDEX; Schema: public; Owner: -

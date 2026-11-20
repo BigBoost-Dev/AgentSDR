@@ -106,6 +106,9 @@ export const SPREADSHEET_COLUMN_MAP: Record<string, string> = {
   followup3: "followUp3Message",
   followup3message: "followUp3Message",
   "follow-up3": "followUp3Message",
+  followup4: "followUp4Message",
+  followup4message: "followUp4Message",
+  "follow-up4": "followUp4Message",
 };
 
 export type MappedLeadRow = {
@@ -128,6 +131,7 @@ export type MappedLeadRow = {
   followUp1Message: string | null;
   followUp2Message: string | null;
   followUp3Message: string | null;
+  followUp4Message: string | null;
 };
 
 export type SpreadsheetLeadInput = {
@@ -177,6 +181,7 @@ export function mapSpreadsheetRowsWithMapping(rows: Record<string, string>[], ma
       followUp1Message: read(raw, "followUp1Message"),
       followUp2Message: read(raw, "followUp2Message"),
       followUp3Message: read(raw, "followUp3Message"),
+      followUp4Message: read(raw, "followUp4Message"),
     },
   }));
 }
@@ -230,6 +235,7 @@ export function mapSpreadsheetRows(rows: Record<string, string>[]): MappedLeadRo
       followUp1Message: out.followUp1Message || null,
       followUp2Message: out.followUp2Message || null,
       followUp3Message: out.followUp3Message || null,
+      followUp4Message: out.followUp4Message || null,
     };
   });
 }
@@ -528,7 +534,7 @@ export const importLeadRows = async (
       personCache: new Map(lockedPeople.map((person) => [person.id, person])),
     };
     const campaignMessages = Object.fromEntries([
-      "invitationMessage", "acceptanceMessage", "followUp1Message", "followUp2Message", "followUp3Message",
+      "invitationMessage", "acceptanceMessage", "followUp1Message", "followUp2Message", "followUp3Message", "followUp4Message",
     ].flatMap((field) => {
       const values = [...new Set(withCampaign.map((item) => item.row[field as keyof MappedLeadRow]).filter((value): value is string => typeof value === "string" && value.length > 0))];
       if (values.length > 1) throw new Error(`${field} must be the same for every row because message templates belong to the campaign`);

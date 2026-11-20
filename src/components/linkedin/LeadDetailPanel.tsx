@@ -37,6 +37,7 @@ export const LEAD_STATUS_VARIANTS: Record<
   FOLLOW_UP_1_SENT: "blue",
   FOLLOW_UP_2_SENT: "blue",
   FOLLOW_UP_3_SENT: "blue",
+  CONNECTED: "success",
   COMPLETED: "secondary",
   REPLIED: "purple",
   FAILED: "destructive",
@@ -49,6 +50,7 @@ export const LEAD_STATUS_LABELS: Record<string, string> = {
   FOLLOW_UP_1_SENT: "Follow-up 1",
   FOLLOW_UP_2_SENT: "Follow-up 2",
   FOLLOW_UP_3_SENT: "Follow-up 3",
+  CONNECTED: "Connected",
   COMPLETED: "Completed",
   REPLIED: "Replied",
   FAILED: "Failed",
@@ -60,11 +62,12 @@ const MESSAGE_TYPE_LABEL: Record<string, string> = {
   FOLLOW_UP_1: "Follow-up 1",
   FOLLOW_UP_2: "Follow-up 2",
   FOLLOW_UP_3: "Follow-up 3",
+  FOLLOW_UP_4: "Follow-up 4",
   RECEIVED: "Received",
   CUSTOM_SENT: "Sent",
 };
 
-const SENT_TYPES = new Set(["INVITATION", "ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "CUSTOM_SENT"]);
+const SENT_TYPES = new Set(["INVITATION", "ACCEPTANCE", "FOLLOW_UP_1", "FOLLOW_UP_2", "FOLLOW_UP_3", "FOLLOW_UP_4", "CUSTOM_SENT"]);
 
 const MESSAGE_TYPE_FOR_FIELD: Record<LeadMessageField, string> = {
   invitationMessage: "INVITATION",
@@ -72,6 +75,7 @@ const MESSAGE_TYPE_FOR_FIELD: Record<LeadMessageField, string> = {
   followUp1Message: "FOLLOW_UP_1",
   followUp2Message: "FOLLOW_UP_2",
   followUp3Message: "FOLLOW_UP_3",
+  followUp4Message: "FOLLOW_UP_4",
 };
 
 export type LeadDetail = {
@@ -89,12 +93,14 @@ export type LeadDetail = {
   followUp1Message: string | null;
   followUp2Message: string | null;
   followUp3Message: string | null;
+  followUp4Message: string | null;
   renderedTemplates: Record<LeadMessageField, string | null>;
   requestSentAt: string | null;
   acceptMessageSentAt: string | null;
   followUp1SentAt: string | null;
   followUp2SentAt: string | null;
   followUp3SentAt: string | null;
+  followUp4SentAt: string | null;
   createdAt: string;
   campaign: { id: string; name: string } | null;
   linkedInAccount: {
@@ -117,6 +123,7 @@ const draftFromLead = (lead: LeadDetail): MessageDraft => ({
   followUp1Message: lead.followUp1Message ?? "",
   followUp2Message: lead.followUp2Message ?? "",
   followUp3Message: lead.followUp3Message ?? "",
+  followUp4Message: lead.followUp4Message ?? "",
 });
 
 function Avatar({ src, name, size = "lg" }: { src: string | null; name: string; size?: "lg" | "md" }) {
@@ -201,7 +208,7 @@ function OutreachTemplatesEditor({
     setDraft(draftFromLead(lead));
     setEditingFields(new Set());
     setSaveError(null);
-  }, [lead.id, lead.invitationMessage, lead.acceptanceMessage, lead.followUp1Message, lead.followUp2Message, lead.followUp3Message, lead.status]);
+  }, [lead.id, lead.invitationMessage, lead.acceptanceMessage, lead.followUp1Message, lead.followUp2Message, lead.followUp3Message, lead.followUp4Message, lead.status]);
 
   const editableFields = LEAD_MESSAGE_FIELDS.filter(({ key }) => isMessageEditable(key, lead.status));
   const hasEditable = editableFields.length > 0;
@@ -255,6 +262,7 @@ function OutreachTemplatesEditor({
         followUp1Message: payload.followUp1Message ?? lead.followUp1Message,
         followUp2Message: payload.followUp2Message ?? lead.followUp2Message,
         followUp3Message: payload.followUp3Message ?? lead.followUp3Message,
+        followUp4Message: payload.followUp4Message ?? lead.followUp4Message,
       };
       const refreshedResponse = await fetch(`/api/linkedin/leads/${lead.id}`);
       const refreshed = await refreshedResponse.json().catch(() => null);
@@ -423,6 +431,7 @@ export function LeadDetailPanel({
       followUp1Message: updated.followUp1Message,
       followUp2Message: updated.followUp2Message,
       followUp3Message: updated.followUp3Message,
+      followUp4Message: updated.followUp4Message,
     });
   };
 
@@ -534,6 +543,7 @@ export function LeadDetailPanel({
                   <DetailRow label="Follow-up 1" value={fmt(lead.followUp1SentAt)} />
                   <DetailRow label="Follow-up 2" value={fmt(lead.followUp2SentAt)} />
                   <DetailRow label="Follow-up 3" value={fmt(lead.followUp3SentAt)} />
+                  <DetailRow label="Follow-up 4" value={fmt(lead.followUp4SentAt)} />
                   {lead.providerId && (
                     <DetailRow
                       label="Provider ID"

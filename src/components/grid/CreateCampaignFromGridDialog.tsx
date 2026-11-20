@@ -24,6 +24,7 @@ const LINKEDIN_FIELDS: { key: keyof GridCampaignMapping; label: string }[] = [
   { key: "followUp1Message", label: "Follow-up 1" },
   { key: "followUp2Message", label: "Follow-up 2" },
   { key: "followUp3Message", label: "Follow-up 3" },
+  { key: "followUp4Message", label: "Follow-up 4" },
 ];
 
 function normalize(value: string) {
@@ -45,6 +46,7 @@ function suggestedMapping(columns: GridColumn[]): GridCampaignMapping {
     followUp1Message: ["followup1", "followup1message"],
     followUp2Message: ["followup2", "followup2message"],
     followUp3Message: ["followup3", "followup3message"],
+    followUp4Message: ["followup4", "followup4message"],
   };
   return Object.fromEntries(Object.entries(aliases).flatMap(([field, names]) => {
     const column = columns.find((candidate) => names.includes(normalize(candidate.name)));

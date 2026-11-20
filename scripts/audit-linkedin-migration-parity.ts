@@ -40,6 +40,11 @@ type DbRow = {
   acceptMessageSentAt: Date | null;
   followUp1SentAt: Date | null;
   followUp2SentAt: Date | null;
+  followUp3SentAt: Date | null;
+  followUp1DelayDays: number;
+  followUp2DelayDays: number;
+  followUp3DelayDays: number;
+  followUp4DelayDays: number;
   createdAt: Date;
   supersededByLeadId: string | null;
   connectionChatId: string | null;
@@ -85,18 +90,19 @@ async function main() {
         l."linkedinUrl" AS "legacyLinkedinUrl", p.linkedin_url AS "personLinkedinUrl",
         l."sourceLinkedinIdentifier", l."sourceLinkedinApi",
         l."inviteRetryCount", l."resolveRetryCount", l."resolveNextAttemptAt",
-        l."requestSentAt", l."acceptMessageSentAt", l."followUp1SentAt", l."followUp2SentAt",
+        l."requestSentAt", l."acceptMessageSentAt", l."followUp1SentAt", l."followUp2SentAt", l."followUp3SentAt",
+        c."followUp1DelayDays", c."followUp2DelayDays", c."followUp3DelayDays", c."followUp4DelayDays",
         l."createdAt", l."supersededByLeadId",
         connection.chat_id AS "connectionChatId",
         jsonb_build_object(
           'invitationMessage', l."invitationMessage", 'acceptanceMessage', l."acceptanceMessage",
           'followUp1Message', l."followUp1Message", 'followUp2Message', l."followUp2Message",
-          'followUp3Message', l."followUp3Message"
+          'followUp3Message', l."followUp3Message", 'followUp4Message', l."followUp4Message"
         ) AS "leadTemplates",
         jsonb_build_object(
           'invitationMessage', c."invitationMessage", 'acceptanceMessage', c."acceptanceMessage",
           'followUp1Message', c."followUp1Message", 'followUp2Message', c."followUp2Message",
-          'followUp3Message', c."followUp3Message"
+          'followUp3Message', c."followUp3Message", 'followUp4Message', c."followUp4Message"
         ) AS "campaignTemplates",
         coalesce(message.types, ARRAY[]::text[]) AS "canonicalMessageTypes",
         p.email AS "personEmail", p.first_name AS "personFirstName", p.last_name AS "personLastName",
@@ -138,7 +144,7 @@ async function main() {
         SELECT "leadId", type FROM "Message"
         WHERE "leadId" IS NOT NULL
           AND "duplicateOfMessageId" IS NULL
-          AND type IN ('INVITATION','ACCEPTANCE','FOLLOW_UP_1','FOLLOW_UP_2','FOLLOW_UP_3')
+          AND type IN ('INVITATION','ACCEPTANCE','FOLLOW_UP_1','FOLLOW_UP_2','FOLLOW_UP_3','FOLLOW_UP_4')
         GROUP BY "leadId", type HAVING count(*) > 1
       ) duplicate
     `);
@@ -182,7 +188,17 @@ async function main() {
         linkedinUrl: row.companyLinkedinUrl,
         raw: row.companyRaw,
       } : null);
-      const input: LinkedinParityLead = { ...row, variables, canonicalMessageTypes: new Set(row.canonicalMessageTypes) };
+      const input: LinkedinParityLead = {
+        ...row,
+        variables,
+        canonicalMessageTypes: new Set(row.canonicalMessageTypes),
+        campaignDelays: {
+          followUp1DelayDays: row.followUp1DelayDays,
+          followUp2DelayDays: row.followUp2DelayDays,
+          followUp3DelayDays: row.followUp3DelayDays,
+          followUp4DelayDays: row.followUp4DelayDays,
+        },
+      };
       const comparison = compareLinkedinLead(input, now);
       const candidates = assignmentMap.get(row.campaignId ?? "") ?? allAccounts;
       const accounts = compareEligibleAccountIds(

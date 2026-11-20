@@ -16,6 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         ...(typeof body.followUp1Message === "string" && { followUp1Message: body.followUp1Message }),
         ...(typeof body.followUp2Message === "string" && { followUp2Message: body.followUp2Message }),
         ...(typeof body.followUp3Message === "string" && { followUp3Message: body.followUp3Message }),
+        ...(typeof body.followUp4Message === "string" && { followUp4Message: body.followUp4Message }),
       });
       return NextResponse.json(result);
     } catch (error) {

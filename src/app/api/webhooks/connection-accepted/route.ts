@@ -142,7 +142,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
     const profilePictureUrl: string | null = body.user_picture_url ?? null;
 
     const requestCandidates = await db
-      .select({ lead: leads, person: people, company: companies, campaignStatus: campaigns.status, campaignAcceptanceMessage: campaigns.acceptanceMessage })
+      .select({ lead: leads, person: people, company: companies, campaignStatus: campaigns.status, campaignAcceptanceMessage: campaigns.acceptanceMessage, campaignAcceptanceDelayDays: campaigns.acceptanceDelayDays })
       .from(leads)
       .innerJoin(people, eq(leads.personId, people.id))
       .leftJoin(companies, eq(people.companyId, companies.id))
@@ -162,7 +162,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
       return response;
     }
     const fallbackLeads = requestCandidates.length ? [] : await db
-      .select({ lead: leads, person: people, company: companies, campaignStatus: campaigns.status, campaignAcceptanceMessage: campaigns.acceptanceMessage })
+      .select({ lead: leads, person: people, company: companies, campaignStatus: campaigns.status, campaignAcceptanceMessage: campaigns.acceptanceMessage, campaignAcceptanceDelayDays: campaigns.acceptanceDelayDays })
       .from(leads)
       .innerJoin(people, eq(leads.personId, people.id))
       .leftJoin(companies, eq(people.companyId, companies.id))
@@ -181,7 +181,7 @@ async function handle(req: NextRequest, body: WebhookBody) {
       return response;
     }
     const leadRow = requestCandidates[0] ?? fallbackLeads[0];
-    const lead = leadRow ? { ...leadRow.lead, acceptanceMessage: leadRow.campaignAcceptanceMessage ?? leadRow.lead.acceptanceMessage, ...personProfile(leadRow.person, leadRow.company), campaignStatus: leadRow.campaignStatus } : null;
+    const lead = leadRow ? { ...leadRow.lead, acceptanceMessage: leadRow.campaignAcceptanceMessage ?? leadRow.lead.acceptanceMessage, acceptanceDelayDays: leadRow.campaignAcceptanceDelayDays, ...personProfile(leadRow.person, leadRow.company), campaignStatus: leadRow.campaignStatus } : null;
     if (lead) {
       log.info(`Lead found in DB: ${lead.linkedinUrl} (status: ${lead.status})`);
     } else {
@@ -273,6 +273,8 @@ async function handle(req: NextRequest, body: WebhookBody) {
 
     if (acceptanceResult === "blocked") {
       log.warn("Acceptance blocked by Person-global DNC; lead marked FAILED");
+    } else if (acceptanceResult === "deferred") {
+      log.info(`Acceptance delay not over — lead status advanced: REQUEST_SENT → CONNECTED; sendMissedAcceptances sends the message when it is due`);
     } else if (acceptanceResult === "retry") {
       log.warn(`No chatId — leaving lead as REQUEST_SENT; sendMissedAcceptances will retry next cycle`);
     } else {

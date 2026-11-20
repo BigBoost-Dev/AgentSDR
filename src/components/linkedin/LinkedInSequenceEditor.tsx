@@ -9,12 +9,23 @@ import * as Textarea from "@/components/alignui/textarea";
 import { Frame, FrameHeader, FramePanel } from "@/components/analytics/kit/Frame";
 import {
   EMPTY_LINKEDIN_SEQUENCE,
-  LINKEDIN_SEQUENCE_STEPS,
+  LINKEDIN_STEP_DELAY_FIELD,
+  linkedinSequenceDelaysError,
   linkedinSequenceError,
+  linkedinSequenceSteps,
   normalizeLinkedinSequence,
   type LinkedinCampaignSequence,
   type LinkedinSequenceField,
+  type LinkedinSequenceSettings,
 } from "@/lib/linkedin/campaignSequence";
+import {
+  SEQUENCE_DELAY_BOUNDS,
+  SEQUENCE_DELAY_FIELDS,
+  SEQUENCE_DELAY_LABELS,
+  withDefaultDelays,
+  type SequenceDelayField,
+  type SequenceDelays,
+} from "@/lib/linkedin/sequenceTiming";
 import { MAX_INVITATION_MESSAGE_LENGTH } from "@/lib/linkedin/invitationMessage";
 import { cn } from "@/utils/cn";
 
@@ -44,13 +55,18 @@ export function LinkedInSequenceEditor({
   saveLabel = "Save sequence",
 }: {
   campaignId: string;
-  initialSequence?: Partial<Record<LinkedinSequenceField, string | null>>;
-  onSaved?: (sequence: LinkedinCampaignSequence) => void;
+  initialSequence?: Partial<Record<LinkedinSequenceField, string | null>> & Partial<Record<SequenceDelayField, number | null>>;
+  onSaved?: (sequence: LinkedinSequenceSettings) => void;
   saveLabel?: string;
 }) {
   const [sequence, setSequence] = useState<LinkedinCampaignSequence>(() =>
     sequenceFromNullable(initialSequence ?? EMPTY_LINKEDIN_SEQUENCE),
   );
+  // The delay inputs are kept as text so a field can be cleared while typing.
+  const [delayInputs, setDelayInputs] = useState<Record<SequenceDelayField, string>>(() => {
+    const initial = withDefaultDelays(initialSequence);
+    return Object.fromEntries(SEQUENCE_DELAY_FIELDS.map((field) => [field, String(initial[field])])) as Record<SequenceDelayField, string>;
+  });
   const [selected, setSelected] = useState(0);
   const [fields, setFields] = useState<MergeField[]>(DEFAULT_FIELDS);
   const [leads, setLeads] = useState<PreviewLead[]>([]);
@@ -80,8 +96,31 @@ export function LinkedInSequenceEditor({
     return () => { cancelled = true; };
   }, [campaignId]);
 
-  const step = LINKEDIN_SEQUENCE_STEPS[selected]!;
-  const validationError = useMemo(() => linkedinSequenceError(sequence), [sequence]);
+  const delayError = useMemo(() => {
+    const blank = SEQUENCE_DELAY_FIELDS.find((field) => delayInputs[field].trim() === "");
+    if (blank) return `${SEQUENCE_DELAY_LABELS[blank]} must be a whole number of days`;
+    return linkedinSequenceDelaysError(delayInputs);
+  }, [delayInputs]);
+  // Timing text follows the numbers being typed; an invalid entry falls back to the default for the label only.
+  const steps = useMemo(() => {
+    const typed = Object.fromEntries(
+      SEQUENCE_DELAY_FIELDS.flatMap((field) => {
+        const value = delayInputs[field].trim() === "" ? NaN : Number(delayInputs[field]);
+        const { min, max } = SEQUENCE_DELAY_BOUNDS[field];
+        return Number.isInteger(value) && value >= min && value <= max ? [[field, value]] : [];
+      }),
+    ) as Partial<SequenceDelays>;
+    return linkedinSequenceSteps(typed);
+  }, [delayInputs]);
+  const step = steps[selected]!;
+  const stepDelayField = LINKEDIN_STEP_DELAY_FIELD[step.field];
+  const validationError = useMemo(() => linkedinSequenceError(sequence) ?? delayError, [sequence, delayError]);
+
+  function updateDelay(field: SequenceDelayField, value: string) {
+    setSaved(false);
+    setError(null);
+    setDelayInputs((current) => ({ ...current, [field]: value }));
+  }
 
   function update(field: LinkedinSequenceField, value: string) {
     setSaved(false);
@@ -103,22 +142,23 @@ export function LinkedInSequenceEditor({
   }
 
   async function save() {
-    const issue = linkedinSequenceError(sequence);
+    const issue = linkedinSequenceError(sequence) ?? delayError;
     if (issue) { setError(issue); return; }
+    const delays = withDefaultDelays(Object.fromEntries(SEQUENCE_DELAY_FIELDS.map((field) => [field, Number(delayInputs[field])])));
     setSaving(true);
     setError(null);
     try {
       const response = await fetch(`/api/linkedin/campaigns/${campaignId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sequence),
+        body: JSON.stringify({ ...sequence, ...delays }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(data.error ?? "Could not save sequence");
       const normalized = normalizeLinkedinSequence(sequence);
       setSequence(normalized);
       setSaved(true);
-      onSaved?.(normalized);
+      onSaved?.({ ...normalized, ...delays });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save sequence");
     } finally {
@@ -158,7 +198,7 @@ export function LinkedInSequenceEditor({
           <FrameHeader title="Sequence flow" description="Applies to every lead, personalised at send time. Timing follows the live LinkedIn sender." />
           <FramePanel className="p-2 sm:p-2">
             <ol className="flex flex-col">
-              {LINKEDIN_SEQUENCE_STEPS.map((candidate, index) => {
+              {steps.map((candidate, index) => {
                 const hasMessage = Boolean(sequence[candidate.field].trim());
                 const active = selected === index;
                 return (
@@ -209,6 +249,26 @@ export function LinkedInSequenceEditor({
             }
           />
           <FramePanel>
+            {stepDelayField && (
+              <label className="mb-4 flex flex-wrap items-center gap-2 text-label-sm text-text-strong-950">
+                Send after
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={SEQUENCE_DELAY_BOUNDS[stepDelayField].min}
+                  max={SEQUENCE_DELAY_BOUNDS[stepDelayField].max}
+                  step={1}
+                  value={delayInputs[stepDelayField]}
+                  onChange={(event) => updateDelay(stepDelayField, event.target.value)}
+                  aria-label={`${step.label}: days to wait`}
+                  className="h-9 w-20 rounded-lg bg-bg-white-0 px-2.5 text-paragraph-sm tabular-nums text-text-strong-950 ring-1 ring-inset ring-stroke-soft-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-base"
+                />
+                {stepDelayField === "acceptanceDelayDays" ? "days (0 = as soon as they accept)" : "days"}
+                <span className="text-paragraph-xs font-normal text-text-sub-600">
+                  {stepDelayField === "acceptanceDelayDays" ? "after the connection is accepted" : "after the previous message"}
+                </span>
+              </label>
+            )}
             <p className="mb-2 text-paragraph-xs text-text-sub-600">Merge fields from People and imported raw columns — click one to insert it.</p>
             <div className="max-h-24 overflow-y-auto rounded-xl bg-bg-weak-50 p-2.5 ring-1 ring-inset ring-stroke-soft-200">
               <div className="flex flex-wrap gap-1.5">

@@ -23,7 +23,8 @@ export type GridCampaignMapping = Partial<Record<
   | "acceptanceMessage"
   | "followUp1Message"
   | "followUp2Message"
-  | "followUp3Message",
+  | "followUp3Message"
+  | "followUp4Message",
   string
 >>;
 
@@ -43,6 +44,7 @@ const CHANNEL_TEMPLATE_FIELDS = new Set([
   "followUp1Message",
   "followUp2Message",
   "followUp3Message",
+  "followUp4Message",
 ]);
 
 function stringCell(cells: Record<string, unknown>, key?: string): string | null {

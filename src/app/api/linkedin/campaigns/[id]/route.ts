@@ -19,6 +19,7 @@ import {
   linkedinSequenceError,
   normalizeLinkedinSequence,
 } from "@/lib/linkedin/campaignSequence";
+import { parseSequenceDelays, type SequenceDelays } from "@/lib/linkedin/sequenceTiming";
 
 const ACCOUNT_SELECT = {
   id: linkedInAccounts.id,
@@ -73,6 +74,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp2SentAt: leads.followUp2SentAt,
         followUp3Message: leads.followUp3Message,
         followUp3SentAt: leads.followUp3SentAt,
+        followUp4Message: leads.followUp4Message,
+        followUp4SentAt: leads.followUp4SentAt,
         accountUsername: linkedInAccounts.username,
         accountName: linkedInAccounts.name,
         accountProfilePictureUrl: linkedInAccounts.profilePictureUrl,
@@ -93,6 +96,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp1Message: campaign.followUp1Message ?? lead.followUp1Message,
         followUp2Message: campaign.followUp2Message ?? lead.followUp2Message,
         followUp3Message: campaign.followUp3Message ?? lead.followUp3Message,
+        followUp4Message: campaign.followUp4Message ?? lead.followUp4Message,
         ...(person ? personProfile(person, company) : {
           email: null,
           linkedinUrl: lead.sourceLinkedinIdentifier ?? "",
@@ -134,6 +138,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp1Message: campaign.followUp1Message,
         followUp2Message: campaign.followUp2Message,
         followUp3Message: campaign.followUp3Message,
+        followUp4Message: campaign.followUp4Message,
+        acceptanceDelayDays: campaign.acceptanceDelayDays,
+        followUp1DelayDays: campaign.followUp1DelayDays,
+        followUp2DelayDays: campaign.followUp2DelayDays,
+        followUp3DelayDays: campaign.followUp3DelayDays,
+        followUp4DelayDays: campaign.followUp4DelayDays,
         accounts,
         totalLeads: campaignLeads.length,
         statusCounts,
@@ -146,6 +156,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         followUp1SentAt: l.followUp1SentAt?.toISOString() ?? null,
         followUp2SentAt: l.followUp2SentAt?.toISOString() ?? null,
         followUp3SentAt: l.followUp3SentAt?.toISOString() ?? null,
+        followUp4SentAt: l.followUp4SentAt?.toISOString() ?? null,
         createdAt: l.createdAt.toISOString(),
       })),
     });
@@ -156,7 +167,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return withLinkedinOrg(req, async () => {
     const { id } = await params;
     try {
-      const { name, description, linkedinAccountIds, status, invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message } = await req.json();
+      const body = await req.json();
+      const { name, description, linkedinAccountIds, status, invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message, followUp4Message } = body;
 
       const [existingCampaign] = await db.select().from(campaigns).where(and(inOrg(campaigns), eq(campaigns.id, id))).limit(1);
       if (!existingCampaign) {
@@ -169,15 +181,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ ok: false, error: "Invalid campaign status" }, { status: 400 });
       }
 
-      const sequenceInput = { invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message };
+      const delays = parseSequenceDelays(body);
+      if (!delays.ok) {
+        return NextResponse.json({ ok: false, error: delays.error }, { status: 400 });
+      }
+
+      const sequenceInput = { invitationMessage, acceptanceMessage, followUp1Message, followUp2Message, followUp3Message, followUp4Message };
       const hasSequenceUpdate = LINKEDIN_SEQUENCE_FIELDS.some((field) => sequenceInput[field] !== undefined);
       if (hasSequenceUpdate) {
         const sequence = normalizeLinkedinSequence({
-          invitationMessage: invitationMessage ?? existingCampaign.invitationMessage,
-          acceptanceMessage: acceptanceMessage ?? existingCampaign.acceptanceMessage,
-          followUp1Message: followUp1Message ?? existingCampaign.followUp1Message,
-          followUp2Message: followUp2Message ?? existingCampaign.followUp2Message,
-          followUp3Message: followUp3Message ?? existingCampaign.followUp3Message,
+          // `undefined` keeps the stored message; null or "" clears it (as the update below does),
+          // so clearing follow-up 3 while follow-up 4 exists is caught as a gap.
+          invitationMessage: invitationMessage !== undefined ? invitationMessage : existingCampaign.invitationMessage,
+          acceptanceMessage: acceptanceMessage !== undefined ? acceptanceMessage : existingCampaign.acceptanceMessage,
+          followUp1Message: followUp1Message !== undefined ? followUp1Message : existingCampaign.followUp1Message,
+          followUp2Message: followUp2Message !== undefined ? followUp2Message : existingCampaign.followUp2Message,
+          followUp3Message: followUp3Message !== undefined ? followUp3Message : existingCampaign.followUp3Message,
+          followUp4Message: followUp4Message !== undefined ? followUp4Message : existingCampaign.followUp4Message,
         });
         const sequenceError = linkedinSequenceError(sequence);
         if (sequenceError) {
@@ -186,7 +206,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       // Update scalar fields
-      const scalarUpdate: { name?: string; description?: string | null; status?: CampaignStatus; invitationMessage?: string | null; acceptanceMessage?: string | null; followUp1Message?: string | null; followUp2Message?: string | null; followUp3Message?: string | null } = {
+      const scalarUpdate: { name?: string; description?: string | null; status?: CampaignStatus; invitationMessage?: string | null; acceptanceMessage?: string | null; followUp1Message?: string | null; followUp2Message?: string | null; followUp3Message?: string | null; followUp4Message?: string | null } & Partial<SequenceDelays> = {
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description: description?.trim() || null }),
         ...(status !== undefined && { status: status as CampaignStatus }),
@@ -195,6 +215,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(followUp1Message !== undefined && { followUp1Message: followUp1Message?.trim() || null }),
         ...(followUp2Message !== undefined && { followUp2Message: followUp2Message?.trim() || null }),
         ...(followUp3Message !== undefined && { followUp3Message: followUp3Message?.trim() || null }),
+        ...(followUp4Message !== undefined && { followUp4Message: followUp4Message?.trim() || null }),
+        ...delays.delays,
       };
       // Prisma issued the UPDATE even with an empty `data` (it still bumps
       // @updatedAt); Drizzle rejects an empty `set`, so only skip when there is

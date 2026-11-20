@@ -38,6 +38,7 @@ const applyOutboundMessage = (slot: ActivitySlot, type: MessageType) => {
     type === "FOLLOW_UP_1" ||
     type === "FOLLOW_UP_2" ||
     type === "FOLLOW_UP_3" ||
+    type === "FOLLOW_UP_4" ||
     type === "CUSTOM_SENT"
   ) {
     slot.messagesSent++;
@@ -58,6 +59,7 @@ const tallyOutboundTotals = (messages: { type: MessageType }[]) => {
       m.type === "FOLLOW_UP_1" ||
       m.type === "FOLLOW_UP_2" ||
       m.type === "FOLLOW_UP_3" ||
+      m.type === "FOLLOW_UP_4" ||
       m.type === "CUSTOM_SENT"
     ) {
       messagesSent++;

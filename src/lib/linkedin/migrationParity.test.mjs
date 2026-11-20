@@ -29,6 +29,7 @@ function lead(overrides = {}) {
     acceptMessageSentAt: null,
     followUp1SentAt: null,
     followUp2SentAt: null,
+    followUp3SentAt: null,
     connectionChatId: null,
     leadTemplates: { invitationMessage: "Hi Pat" },
     campaignTemplates: {},
@@ -109,6 +110,40 @@ describe("LinkedIn old/new next-action parity", () => {
     expect(result.current.reason).toBe("already_claimed");
     expect(result.differences).not.toContain("invitation_restart_duplicate_risk");
     expect(result.differences).not.toContain("next_action");
+  });
+});
+
+describe("LinkedIn per-campaign follow-up delays", () => {
+  const dayAgo = (days, hours = 0) => new Date(NOW.getTime() - days * 24 * 3600_000 - hours * 3600_000);
+  const base = { status: "ACCEPT_MESSAGE_SENT", leadTemplates: { followUp1Message: "Checking in" } };
+
+  test("default delays keep the old 24 / 48 / 72 hour gaps", () => {
+    expect(peopleNextAction(lead({ ...base, acceptMessageSentAt: dayAgo(1, 1) }), NOW).action).toBe("send_follow_up_1");
+    expect(peopleNextAction(lead({ ...base, acceptMessageSentAt: dayAgo(0, 23) }), NOW).action).toBe("wait");
+    const second = { status: "FOLLOW_UP_1_SENT", leadTemplates: { followUp2Message: "Two" } };
+    expect(peopleNextAction(lead({ ...second, followUp1SentAt: dayAgo(2, 1) }), NOW).action).toBe("send_follow_up_2");
+    expect(peopleNextAction(lead({ ...second, followUp1SentAt: dayAgo(1, 23) }), NOW).action).toBe("wait");
+    const third = { status: "FOLLOW_UP_2_SENT", leadTemplates: { followUp3Message: "Three" } };
+    expect(peopleNextAction(lead({ ...third, followUp2SentAt: dayAgo(3, 1) }), NOW).action).toBe("send_follow_up_3");
+    expect(peopleNextAction(lead({ ...third, followUp2SentAt: dayAgo(2, 23) }), NOW).action).toBe("wait");
+  });
+
+  test("a campaign's own delays replace the defaults, in both models", () => {
+    const item = lead({ ...base, acceptMessageSentAt: dayAgo(2), campaignDelays: { followUp1DelayDays: 3 } });
+    expect(peopleNextAction(item, NOW)).toMatchObject({ action: "wait", reason: "not_due" });
+    expect(legacyNextAction(item, NOW)).toMatchObject({ action: "wait", reason: "not_due" });
+    const due = lead({ ...base, acceptMessageSentAt: dayAgo(3), campaignDelays: { followUp1DelayDays: 3 } });
+    expect(peopleNextAction(due, NOW).action).toBe("send_follow_up_1");
+    expect(compareLinkedinLead(due, NOW).differences).toEqual([]);
+  });
+
+  test("follow-up 4 is sent from FOLLOW_UP_3_SENT after its own delay and ends the sequence", () => {
+    const fourth = { status: "FOLLOW_UP_3_SENT", leadTemplates: { followUp4Message: "Four" }, followUp3SentAt: dayAgo(7) };
+    expect(peopleNextAction(lead({ ...fourth, campaignDelays: { followUp4DelayDays: 7 } }), NOW).action).toBe("send_follow_up_4");
+    expect(peopleNextAction(lead({ ...fourth, campaignDelays: { followUp4DelayDays: 8 } }), NOW).action).toBe("wait");
+    expect(peopleNextAction(lead({ ...fourth, leadTemplates: {} }), NOW)).toMatchObject({ action: "complete", reason: "sequence_exhausted" });
+    expect(peopleNextAction(lead({ ...fourth, canonicalMessageTypes: new Set(["FOLLOW_UP_4"]) }), NOW).action).toBe("advance_existing_claim");
+    expect(compareLinkedinLead(lead({ ...fourth, campaignDelays: { followUp4DelayDays: 7 } }), NOW).differences).toEqual([]);
   });
 });
 

@@ -27,6 +27,8 @@ export const campaignLeadListSelect = {
   followUp2SentAt: leads.followUp2SentAt,
   followUp3Message: leads.followUp3Message,
   followUp3SentAt: leads.followUp3SentAt,
+  followUp4Message: leads.followUp4Message,
+  followUp4SentAt: leads.followUp4SentAt,
   linkedinAccountId: leads.linkedinAccountId,
   createdAt: leads.createdAt,
 } as const;
@@ -51,6 +53,8 @@ type CampaignLeadRow = {
   followUp2SentAt: Date | null;
   followUp3Message: string | null;
   followUp3SentAt: Date | null;
+  followUp4Message: string | null;
+  followUp4SentAt: Date | null;
   linkedinAccountId: string | null;
   linkedInAccount: {
     id: string;
@@ -88,6 +92,8 @@ export const mapCampaignLeadForClient = (
   followUp2SentAt: l.followUp2SentAt?.toISOString() ?? null,
   followUp3Message: l.followUp3Message,
   followUp3SentAt: l.followUp3SentAt?.toISOString() ?? null,
+  followUp4Message: l.followUp4Message,
+  followUp4SentAt: l.followUp4SentAt?.toISOString() ?? null,
   linkedinAccountId: l.linkedinAccountId,
   linkedInAccount: l.linkedInAccount,
   createdAt: l.createdAt.toISOString(),
@@ -147,6 +153,7 @@ export const listCampaignLeadsPage = async (
     followUp1Message: campaigns.followUp1Message,
     followUp2Message: campaigns.followUp2Message,
     followUp3Message: campaigns.followUp3Message,
+    followUp4Message: campaigns.followUp4Message,
   }).from(campaigns).where(and(inOrg(campaigns), eq(campaigns.id, campaignId))).limit(1);
 
   const rows = await db
@@ -183,6 +190,7 @@ export const listCampaignLeadsPage = async (
       followUp1Message: campaignMessages?.followUp1Message ?? r.followUp1Message,
       followUp2Message: campaignMessages?.followUp2Message ?? r.followUp2Message,
       followUp3Message: campaignMessages?.followUp3Message ?? r.followUp3Message,
+      followUp4Message: campaignMessages?.followUp4Message ?? r.followUp4Message,
     }, r.personId ? alsoInByUrl.get(r.personId) ?? [] : [])),
     pagination: {
       page: resolvedPage,

@@ -11,6 +11,26 @@ Each release lists the database migrations it needs; see
 
 ### Added
 
+- **LinkedIn sequence timing and a fourth follow-up, 2026-11-20.** A LinkedIn
+  campaign can now set how long each step waits: **Send after [n] days** for
+  the acceptance message (0 to 30 days after the connection is accepted) and
+  for each follow-up (1 to 60 days after the step before it), on the Sequence
+  tab and through the campaign API. There is a **Follow-up 4** (sent from
+  follow-up 3, after which the sequence completes). Every setting defaults to
+  the old behaviour (acceptance message at once; follow-ups after 24, 48 and
+  72 hours, and 4 days for the new one), so existing campaigns change
+  nothing. A lead that accepts during an acceptance delay shows as
+  **Connected** and the message goes out when it is due. See
+  `docs/linkedin/campaigns.mdx`.
+
+### Fixed
+
+- **A reply from a lead in Connected status is no longer dropped.** The
+  LinkedIn `message-received` webhook ignored messages from leads in
+  `CONNECTED`, so such a reply neither reached the CRM nor stopped the
+  sequence. The statuses that count as a reply are now one tested helper
+  (`src/lib/linkedin/replyStatus.ts`).
+
 - **AI assistants (MCP), 2026-11-13.** AgentSDR is an MCP server at
   `/api/mcp`. Connect Claude (web and desktop), Claude Code, Cursor or any
   MCP client and work **CRM, Action required** from a chat: read the queue and
@@ -43,6 +63,11 @@ Each release lists the database migrations it needs; see
 - `bun run scripts/create-oauth-provider-tables.ts` creates `jwks` and the
   `oauth_*` tables for AI assistants (MCP).
 - `bun run scripts/add-api-key-scopes.ts` adds `api_keys.scopes`.
+- `bun run scripts/add-linkedin-sequence-timing.ts` adds `FOLLOW_UP_4` to
+  `MessageType`, the campaign delay columns (with a CHECK), follow-up 4
+  columns and `Lead.acceptedAt`, and rebuilds `Message_automated_lead_type_uq` to cover
+  `FOLLOW_UP_4`. Run it before deploying the code. It is idempotent and ends
+  with a self-check that fails if the index is incomplete.
 
 ## [0.3.1] - 2026-10-08
 

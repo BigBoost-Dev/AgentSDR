@@ -59,6 +59,7 @@ import {
   primaryKey,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 import { organizations } from "@/lib/auth/schema";
 
@@ -94,6 +95,7 @@ export const messageTypeEnum = pgEnum("MessageType", [
   "RECEIVED",
   "CUSTOM_SENT",
   "FOLLOW_UP_3",
+  "FOLLOW_UP_4",
 ]);
 
 export const searchQueryStatusEnum = pgEnum("SearchQueryStatus", [
@@ -159,12 +161,27 @@ export const campaigns = pgTable("Campaign", {
   followUp1Message: text("followUp1Message"),
   followUp2Message: text("followUp2Message"),
   followUp3Message: text("followUp3Message"),
+  followUp4Message: text("followUp4Message"),
+  /** Days after the connection is accepted before the acceptance message goes out (0 = at once). */
+  acceptanceDelayDays: integer("acceptanceDelayDays").notNull().default(0),
+  /** Days after the previous step; each counts from the step before it. */
+  followUp1DelayDays: integer("followUp1DelayDays").notNull().default(1),
+  followUp2DelayDays: integer("followUp2DelayDays").notNull().default(2),
+  followUp3DelayDays: integer("followUp3DelayDays").notNull().default(3),
+  followUp4DelayDays: integer("followUp4DelayDays").notNull().default(4),
   createdAt: timestamp("createdAt", { precision: 3, mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" })
     .notNull()
     .$onUpdate(() => new Date()),
 },
-  (t) => [index("Campaign_organization_idx").on(t.organizationId)],
+  (t) => [
+    index("Campaign_organization_idx").on(t.organizationId),
+    // Mirrors the CHECK added by scripts/add-linkedin-sequence-timing.ts; declared so drizzle-kit never drops it.
+    check(
+      "Campaign_sequence_delays_chk",
+      sql`${t.acceptanceDelayDays} BETWEEN 0 AND 30 AND ${t.followUp1DelayDays} BETWEEN 1 AND 60 AND ${t.followUp2DelayDays} BETWEEN 1 AND 60 AND ${t.followUp3DelayDays} BETWEEN 1 AND 60 AND ${t.followUp4DelayDays} BETWEEN 1 AND 60`,
+    ),
+  ],
 );
 
 export const campaignAccounts = pgTable(
@@ -215,6 +232,10 @@ export const leads = pgTable(
     followUp2SentAt: timestamp("followUp2SentAt", { precision: 3, mode: "date" }),
     followUp3Message: text("followUp3Message"),
     followUp3SentAt: timestamp("followUp3SentAt", { precision: 3, mode: "date" }),
+    followUp4Message: text("followUp4Message"),
+    followUp4SentAt: timestamp("followUp4SentAt", { precision: 3, mode: "date" }),
+    /** When the accept was first handled; set as the lead moves REQUEST_SENT to CONNECTED, and the campaign's acceptance delay counts from it. */
+    acceptedAt: timestamp("acceptedAt", { precision: 3, mode: "date" }),
     linkedinAccountId: text("linkedinAccountId"),
     createdAt: timestamp("createdAt", { precision: 3, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" })
@@ -285,7 +306,7 @@ export const messages = pgTable("Message", {
     index("Message_organization_idx").on(t.organizationId),
   uniqueIndex("Message_automated_lead_type_uq")
     .on(t.leadId, t.type)
-    .where(sql`${t.leadId} is not null and ${t.duplicateOfMessageId} is null and ${t.type} in ('INVITATION', 'ACCEPTANCE', 'FOLLOW_UP_1', 'FOLLOW_UP_2', 'FOLLOW_UP_3')`),
+    .where(sql`${t.leadId} is not null and ${t.duplicateOfMessageId} is null and ${t.type} in ('INVITATION', 'ACCEPTANCE', 'FOLLOW_UP_1', 'FOLLOW_UP_2', 'FOLLOW_UP_3', 'FOLLOW_UP_4')`),
   index("Message_leadId_idx").on(t.leadId),
   index("Message_duplicateOfMessageId_idx").on(t.duplicateOfMessageId),
 ]);
